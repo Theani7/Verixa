@@ -28,7 +28,13 @@ from backend.chain import (
     rewrite_query,
     route_message,
 )
-from backend.deep import DEEP_PER_SEARCH, decompose, merge_results, reflect_gaps
+from backend.deep import (
+    DEEP_PER_SEARCH,
+    decompose,
+    merge_results,
+    reflect_gaps,
+    search_many,
+)
 from verixa.search import web_search
 
 
@@ -84,30 +90,37 @@ async def event_stream(
             yield _frame({"type": "progress", "label": "Planning research angles"})
             plan = await run_in_threadpool(decompose, query, history_text, llm)
             collected = []
-            for i, sub in enumerate(plan):
-                yield _frame(
-                    {
-                        "type": "progress",
-                        "label": f"Searching angle {i + 1} of {len(plan)}",
-                    }
-                )
-                try:
-                    collected.append(
-                        await run_in_threadpool(web_search, sub, DEEP_PER_SEARCH)
-                    )
-                except Exception:
-                    continue
+            # Parallel fan-out: one progress frame for the batch, all Exa
+            # searches run concurrently via a thread pool (no extra latency
+            # per angle vs sequential awaits).
+            yield _frame(
+                {
+                    "type": "progress",
+                    "label": f"Searching {len(plan)} angles in parallel",
+                }
+            )
+            try:
+                batch = await run_in_threadpool(search_many, plan, DEEP_PER_SEARCH)
+                collected.extend(batch)
+            except Exception:
+                pass
             context, sources = merge_results(collected)
             yield _frame({"type": "progress", "label": "Checking what is missing"})
             followups = await run_in_threadpool(reflect_gaps, query, context, llm)
-            for sub in followups:
-                yield _frame({"type": "progress", "label": "Running follow-up search"})
+            if followups:
+                yield _frame(
+                    {
+                        "type": "progress",
+                        "label": f"Running {len(followups)} follow-up searches in parallel",
+                    }
+                )
                 try:
-                    collected.append(
-                        await run_in_threadpool(web_search, sub, DEEP_PER_SEARCH)
+                    batch = await run_in_threadpool(
+                        search_many, followups, DEEP_PER_SEARCH
                     )
+                    collected.extend(batch)
                 except Exception:
-                    continue
+                    pass
             if followups:
                 context, sources = merge_results(collected)
             yield _frame({"type": "sources", "sources": sources})

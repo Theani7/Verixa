@@ -22,13 +22,13 @@ load_dotenv()
 
 DEFAULT_RESULTS = 5
 
-# Deep research budgets: several small searches stay inside token limits
+# Deep research budgets: many small parallel searches stay inside token limits
 # where one giant context would overflow them.
-DEEP_SUBQUERIES = 3
-DEEP_FOLLOWUPS = 2
-DEEP_PER_SEARCH = 3
-DEEP_CHAR_CAP = 800
-MAX_SOURCES = 10
+DEEP_SUBQUERIES = 8
+DEEP_FOLLOWUPS = 4
+DEEP_PER_SEARCH = 5
+DEEP_CHAR_CAP = 1200
+MAX_SOURCES = 20
 
 # Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】).
 NATIVE_CITATION_RE = re.compile(r"【(\d+)(?:[†‡][^】]*)?】")

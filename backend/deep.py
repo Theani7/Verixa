@@ -109,9 +109,9 @@ def search_many(queries: list[str], per_search: int = DEEP_PER_SEARCH) -> list:
     """Run Exa searches in parallel. Failures drop out, never fail all."""
     if not queries:
         return []
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         futures = [
-            pool.submit(_safe_search, q, per_search) for q in queries[:4]
+            pool.submit(_safe_search, q, per_search) for q in queries[:12]
         ]
         results = []
         for future in futures:
