@@ -15,6 +15,7 @@ import {
   PencilLine,
   Plus,
   ShareNetwork,
+  SignOut,
   Sparkle,
   SpinnerGap,
   Trash,
@@ -22,12 +23,15 @@ import {
   WarningCircle,
 } from '@phosphor-icons/react'
 import './App.css'
-import { API_URL, deleteSharedThread, syncThread } from './api'
+import { API_URL, deleteSharedThread, fetchMe, syncThread } from './api'
+import type { Session } from './api'
 import { SourceList } from './article'
 import { renderRich } from './markdown'
+import AuthModal from './AuthModal'
 import type { Source, Thread, Turn } from './types'
 
 const STORAGE_KEY = 'verixa.threads.v1'
+const AUTH_KEY = 'verixa.auth.v1'
 const LEGACY_STORAGE_KEY = 'seekora.threads.v1'
 const MAX_THREADS = 30
 
@@ -102,6 +106,25 @@ function normalizeThread(value: unknown): Thread | null {
     }
   }
   return null
+}
+
+function loadSession(): Session | null {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as Record<string, unknown>).token !== 'string' ||
+      typeof (parsed as Record<string, unknown>).email !== 'string'
+    ) {
+      return null
+    }
+    return parsed as Session
+  } catch {
+    return null
+  }
 }
 
 function loadThreads(): Thread[] {
@@ -254,6 +277,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [session, setSession] = useState<Session | null>(loadSession)
+  const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
 
   const loading =
     phase === 'searching' || phase === 'reading' || phase === 'writing'
@@ -262,6 +287,19 @@ function App() {
   useEffect(() => {
     saveThreads(threads)
   }, [threads])
+
+  useEffect(() => {
+    const stored = loadSession()
+    if (!stored) return
+    fetchMe(stored.token).catch(() => {
+      setSession(null)
+      try {
+        localStorage.removeItem(AUTH_KEY)
+      } catch {
+        /* ignore */
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (copiedKey === null) return
@@ -281,7 +319,7 @@ function App() {
       )
       setThreads(next)
       const updated = next.find((t) => t.id === activeId)
-      if (updated) syncThread(updated).catch(() => undefined)
+      if (updated) syncThread(updated, session?.token).catch(() => undefined)
     } else {
       const thread: Thread = {
         id: newId(),
@@ -291,7 +329,7 @@ function App() {
       }
       setActiveId(thread.id)
       setThreads((prev) => [thread, ...prev])
-      syncThread(thread).catch(() => undefined)
+      syncThread(thread, session?.token).catch(() => undefined)
     }
   }
   async function runAsk(text?: string): Promise<void> {
@@ -387,8 +425,30 @@ function App() {
 
   function deleteThread(id: string): void {
     setThreads((prev) => prev.filter((t) => t.id !== id))
-    deleteSharedThread(id).catch(() => undefined)
+    deleteSharedThread(id, session?.token).catch(() => undefined)
     if (id === activeId) reset()
+  }
+
+  function handleAuthSuccess(next: Session): void {
+    setSession(next)
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify(next))
+    } catch {
+      /* private mode: session lasts until reload */
+    }
+    setAuthModal(null)
+    for (const thread of threads.slice(0, MAX_THREADS)) {
+      syncThread(thread, next.token).catch(() => undefined)
+    }
+  }
+
+  function signOut(): void {
+    setSession(null)
+    try {
+      localStorage.removeItem(AUTH_KEY)
+    } catch {
+      /* ignore */
+    }
   }
 
   function reset(): void {
@@ -424,7 +484,7 @@ function App() {
     const t = threads.find((x) => x.id === activeId)
     if (!t) return
     try {
-      await syncThread(t)
+      await syncThread(t, session?.token)
       await navigator.clipboard.writeText(`${window.location.origin}/t/${t.id}`)
       setShareState('copied')
     } catch {
@@ -548,6 +608,32 @@ function App() {
             ))}
           </ul>
         )}
+        <div className="auth-block">
+          {session ? (
+            <>
+              <span className="auth-email" title={session.email}>
+                {session.email}
+              </span>
+              <button
+                type="button"
+                className="sign-out"
+                onClick={signOut}
+                aria-label={`Sign out ${session.email}`}
+              >
+                <SignOut size={16} />
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="sign-in"
+              onClick={() => setAuthModal('signin')}
+            >
+              Sign in
+            </button>
+          )}
+        </div>
         <p className="sidebar-foot">Live web answers with cited sources.</p>
       </aside>
       <button
@@ -707,6 +793,14 @@ function App() {
           </footer>
         </div>
       </div>
+
+      {authModal && (
+        <AuthModal
+          initialMode={authModal}
+          onClose={() => setAuthModal(null)}
+          onSuccess={handleAuthSuccess}
+        />
+      )}
     </div>
   )
 }
