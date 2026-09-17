@@ -3,9 +3,10 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
   ArrowBendDownRight,
   ArrowClockwise,
-  ArrowRight,
+  ArrowUp,
   ArrowUpRight,
   BookOpenText,
+  CaretDown,
   ChatCircleText,
   Check,
   Copy,
@@ -414,7 +415,7 @@ interface ComposerProps {
   onSubmit: () => void
   loading: boolean
   placeholder: string
-  hint: string
+  hint?: string
   mode: AskMode
   onMode: (mode: AskMode) => void
   onStop?: () => void
@@ -446,7 +447,6 @@ function Composer({
   onSubmit,
   loading,
   placeholder,
-  hint,
   mode,
   onMode,
   onStop,
@@ -478,7 +478,7 @@ function Composer({
   const current = MODES.find((m) => m.id === mode) ?? MODES[0]
 
   return (
-    <div className="composer">
+    <div className={`composer${value.trim() ? ' has-content' : ''}`}>
       <label className="visually-hidden" htmlFor="verixa-query">
         Ask a question
       </label>
@@ -492,83 +492,103 @@ function Composer({
         rows={1}
       />
       <div className="composer-row">
-        <div className="mode-wrap">
-          <button
-            type="button"
-            className={`mode-button${mode === 'deep' ? ' mode-deep-active' : ''}`}
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-expanded={menuOpen}
-            aria-haspopup="listbox"
-            aria-label={`Answer mode: ${current.label}`}
-            title="Answer mode"
-          >
-            {current.icon}
-            {current.label}
-          </button>
-          {menuOpen && (
-            <>
-              <button
-                type="button"
-                className="menu-backdrop"
-                aria-label="Close mode menu"
-                onClick={() => setMenuOpen(false)}
+        <div className="composer-left">
+          <div className="mode-wrap">
+            <button
+              type="button"
+              className={`mode-button${mode === 'deep' ? ' mode-deep-active' : ''}`}
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-expanded={menuOpen}
+              aria-haspopup="listbox"
+              aria-label={`Answer mode: ${current.label}`}
+              title="Answer mode"
+            >
+              <span className="mode-button-icon">{current.icon}</span>
+              <span className="mode-button-label">{current.label}</span>
+              <CaretDown
+                size={11}
+                weight="bold"
+                className={`mode-caret${menuOpen ? ' open' : ''}`}
+                aria-hidden="true"
               />
-              <div
-                className="mode-menu"
-                role="listbox"
-                aria-label="Answer mode"
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setMenuOpen(false)
-                }}
-              >
-                {MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    role="option"
-                    aria-selected={mode === m.id}
-                    className={`mode-option${mode === m.id ? ' active' : ''}`}
-                    onClick={() => pick(m.id)}
-                  >
-                    {m.icon}
-                    <span className="mode-text">
-                      <span className="mode-name">{m.label}</span>
-                      <span className="mode-desc">{m.desc}</span>
-                    </span>
-                    {mode === m.id && <Check size={16} weight="bold" />}
-                  </button>
-                ))}
-              </div>
-            </>
+            </button>
+            {menuOpen && (
+              <>
+                <button
+                  type="button"
+                  className="menu-backdrop"
+                  aria-label="Close mode menu"
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div
+                  className="mode-menu"
+                  role="listbox"
+                  aria-label="Answer mode"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setMenuOpen(false)
+                  }}
+                >
+                  {MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      role="option"
+                      aria-selected={mode === m.id}
+                      className={`mode-option${mode === m.id ? ' active' : ''}`}
+                      onClick={() => pick(m.id)}
+                    >
+                      {m.icon}
+                      <span className="mode-text">
+                        <span className="mode-name">{m.label}</span>
+                        <span className="mode-desc">{m.desc}</span>
+                      </span>
+                      {mode === m.id && <Check size={16} weight="bold" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="composer-right">
+          <div className="composer-shortcuts" aria-hidden="true">
+            <kbd>↵</kbd>
+            <span className="shortcut-label">Ask</span>
+            <span className="shortcut-sep">·</span>
+            <kbd>⇧↵</kbd>
+            <span className="shortcut-label">New line</span>
+          </div>
+
+          {loading && onStop ? (
+            <button
+              type="button"
+              className="ask-button stop-btn"
+              onClick={onStop}
+              aria-label="Stop generating"
+              title="Stop generating"
+            >
+              <Square size={13} weight="fill" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ask-button"
+              onClick={onSubmit}
+              disabled={loading || !value.trim()}
+              aria-label="Ask"
+              title="Ask (Enter)"
+            >
+              {loading ? (
+                <SpinnerGap size={17} weight="bold" className="spin" />
+              ) : (
+                <ArrowUp size={17} weight="bold" />
+              )}
+              <span>{loading ? 'Asking...' : 'Ask'}</span>
+            </button>
           )}
         </div>
-        <span className="composer-hint">{hint}</span>
-        {loading && onStop ? (
-          <button
-            type="button"
-            className="ask-button stop-btn"
-            onClick={onStop}
-            aria-label="Stop generating"
-            title="Stop generating"
-          >
-            <Square size={14} weight="fill" />
-            <span>Stop</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="ask-button"
-            onClick={onSubmit}
-            disabled={loading || !value.trim()}
-          >
-            {loading ? (
-              <SpinnerGap size={18} weight="bold" className="spin" />
-            ) : (
-              <ArrowRight size={18} weight="bold" />
-            )}
-            {loading ? 'Asking...' : 'Ask'}
-          </button>
-        )}
       </div>
     </div>
   )
@@ -1571,7 +1591,6 @@ function App() {
                   onMode={setAskMode}
                   onStop={loading ? stopAsk : undefined}
                   placeholder="Ask anything..."
-                  hint="Press Enter to ask, Shift plus Enter for a new line"
                 />
               </form>
               <ul className="suggest-list rise rise-3">
@@ -1723,7 +1742,6 @@ function App() {
                     onMode={setAskMode}
                     onStop={loading ? stopAsk : undefined}
                     placeholder={turns.length > 0 ? 'Ask a follow-up...' : 'Ask anything...'}
-                    hint="Press Enter to ask, Shift plus Enter for a new line"
                   />
                 </form>
               </div>
