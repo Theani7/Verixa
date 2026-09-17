@@ -1318,6 +1318,10 @@
   cursor: pointer;
 }
 
+.switch-row.disabled {
+  opacity: 0.5;
+}
+
 .switch-text {
   display: flex;
   flex-direction: column;

@@ -92,6 +92,9 @@ sections. Account edits your full name and username, shows your login email
 GitHub support. Personalization stores your name and response instructions
 on the device and sends them with every question. Memory keeps facts Verixa
 should remember; signed-in users get them injected into every answer.
+Memory learns on its own after each answer (name, home, preferences) with
+dedup and a 100-item cap, and can be paused or frozen from its two switches:
+use-in-answers and learn-automatically.
 Personalization covers name, occupation, company, date of birth, gender,
 custom instructions, an optional shared location, response length (short,
 default, long), and response format (lists, mixed, paragraphs) — every

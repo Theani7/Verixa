@@ -17,6 +17,8 @@ export interface Me {
   full_name: string
   username: string
   created_at: string
+  memory_enabled: boolean
+  memory_auto: boolean
 }
 
 export interface Memory {
@@ -135,7 +137,9 @@ export async function fetchMe(token: string): Promise<Me> {
     typeof (data as Record<string, unknown>).email !== 'string' ||
     typeof (data as Record<string, unknown>).full_name !== 'string' ||
     typeof (data as Record<string, unknown>).username !== 'string' ||
-    typeof (data as Record<string, unknown>).created_at !== 'string'
+    typeof (data as Record<string, unknown>).created_at !== 'string' ||
+    typeof (data as Record<string, unknown>).memory_enabled !== 'boolean' ||
+    typeof (data as Record<string, unknown>).memory_auto !== 'boolean'
   ) {
     throw new Error('Session is invalid.')
   }
@@ -144,7 +148,12 @@ export async function fetchMe(token: string): Promise<Me> {
 
 export async function updateProfile(
   token: string,
-  profile: { full_name: string; username: string },
+  profile: {
+    full_name?: string
+    username?: string
+    memory_enabled?: boolean
+    memory_auto?: boolean
+  },
 ): Promise<Me> {
   const data = await request('/api/me', {
     method: 'PUT',

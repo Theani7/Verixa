@@ -434,12 +434,16 @@ function MemoryPane({
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [memEnabled, setMemEnabled] = useState(true)
+  const [memAuto, setMemAuto] = useState(true)
 
   useEffect(() => {
     if (!session) return
-    listMemories(session.token)
-      .then((rows) => {
+    Promise.all([listMemories(session.token), fetchMe(session.token)])
+      .then(([rows, me]) => {
         setMemories(rows)
+        setMemEnabled(me.memory_enabled)
+        setMemAuto(me.memory_auto)
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -450,6 +454,26 @@ function MemoryPane({
 
   const token = session?.token ?? ''
   if (!session) return <SignInPrompt onOpenAuth={onOpenAuth} />
+
+  async function setFlag(
+    key: 'memory_enabled' | 'memory_auto',
+    value: boolean,
+  ): Promise<void> {
+    const prevEnabled = memEnabled
+    const prevAuto = memAuto
+    if (key === 'memory_enabled') setMemEnabled(value)
+    else setMemAuto(value)
+    setError('')
+    try {
+      const me = await updateProfile(token, { [key]: value })
+      setMemEnabled(me.memory_enabled)
+      setMemAuto(me.memory_auto)
+    } catch (err) {
+      setMemEnabled(prevEnabled)
+      setMemAuto(prevAuto)
+      setError(err instanceof Error ? err.message : 'Could not save setting.')
+    }
+  }
 
   async function add(e: FormEvent): Promise<void> {
     e.preventDefault()
@@ -480,6 +504,42 @@ function MemoryPane({
 
   return (
     <div>
+      <label className="switch-row" htmlFor="memory-enabled">
+        <span className="switch-text">
+          <span className="switch-title">Use memory in answers</span>
+          <span className="switch-sub">
+            {memEnabled
+              ? 'Saved facts are included when answering you.'
+              : 'Paused: saved facts stay stored but are ignored.'}
+          </span>
+        </span>
+        <input
+          id="memory-enabled"
+          type="checkbox"
+          className="switch"
+          checked={memEnabled}
+          onChange={(e) => setFlag('memory_enabled', e.target.checked)}
+        />
+      </label>
+      <label
+        className={`switch-row${memEnabled ? '' : ' disabled'}`}
+        htmlFor="memory-auto"
+      >
+        <span className="switch-text">
+          <span className="switch-title">Learn automatically</span>
+          <span className="switch-sub">
+            Save new facts from your chats without asking.
+          </span>
+        </span>
+        <input
+          id="memory-auto"
+          type="checkbox"
+          className="switch"
+          checked={memAuto}
+          disabled={!memEnabled}
+          onChange={(e) => setFlag('memory_auto', e.target.checked)}
+        />
+      </label>
       <p className="settings-lead">
         Things Verixa should remember when answering you, like your city or
         how much detail you like. {memories.length} of 100 saved.
