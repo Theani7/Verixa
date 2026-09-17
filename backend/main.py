@@ -1,15 +1,25 @@
 """FastAPI entrypoint for the Verixa Perplexity clone."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.chain import answer_query
+from backend.db import init_db
 from backend.streaming import event_stream
 from backend.threads import clean_turns, delete_thread, get_thread, save_thread, valid_id
 
-app = FastAPI(title="Verixa API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Verixa API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

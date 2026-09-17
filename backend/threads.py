@@ -1,12 +1,10 @@
-"""Server-side thread store backing share links. SQLite, stdlib only."""
+"""Thread store backing share links, on Postgres via SQLAlchemy."""
 
-import json
 import re
-import sqlite3
 import time
-from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "verixa.db"
+from backend.db import session_scope
+from backend.models import Thread
 
 MAX_TURNS = 50
 MAX_QUERY_CHARS = 2000
@@ -14,21 +12,6 @@ MAX_ANSWER_CHARS = 20000
 MAX_SOURCES_PER_TURN = 10
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS threads (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    turns TEXT NOT NULL,
-    updated_at REAL NOT NULL
-)
-"""
-
-
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(_SCHEMA)
-    return conn
 
 
 def valid_id(thread_id: str) -> bool:
@@ -79,31 +62,38 @@ def clean_turns(turns) -> list[dict] | None:
 
 
 def save_thread(thread_id: str, title: str, turns: list[dict]) -> None:
-    with _connect() as conn:
-        conn.execute(
-            "INSERT INTO threads (id, title, turns, updated_at) VALUES (?, ?, ?, ?)"
-            " ON CONFLICT(id) DO UPDATE SET title=excluded.title,"
-            " turns=excluded.turns, updated_at=excluded.updated_at",
-            (thread_id, title[:200], json.dumps(turns), time.time()),
-        )
+    with session_scope() as session:
+        row = session.get(Thread, thread_id)
+        if row is None:
+            session.add(
+                Thread(
+                    id=thread_id,
+                    title=title[:200],
+                    turns=turns,
+                    updated_at=time.time(),
+                )
+            )
+        else:
+            row.title = title[:200]
+            row.turns = turns
+            row.updated_at = time.time()
 
 
 def get_thread(thread_id: str) -> dict | None:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT id, title, turns, updated_at FROM threads WHERE id = ?",
-            (thread_id,),
-        ).fetchone()
-    if row is None:
-        return None
-    return {
-        "id": row[0],
-        "title": row[1],
-        "turns": json.loads(row[2]),
-        "updated_at": row[3],
-    }
+    with session_scope() as session:
+        row = session.get(Thread, thread_id)
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "title": row.title,
+            "turns": row.turns,
+            "updated_at": row.updated_at,
+        }
 
 
 def delete_thread(thread_id: str) -> None:
-    with _connect() as conn:
-        conn.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
+    with session_scope() as session:
+        row = session.get(Thread, thread_id)
+        if row is not None:
+            session.delete(row)

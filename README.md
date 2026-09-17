@@ -16,13 +16,17 @@ and streams it token by token into a dark, minimal React UI.
 
 ## Stack
 
-- Backend: FastAPI, LangChain, `langchain-groq`, `exa-py`
+- Backend: FastAPI, LangChain, `langchain-groq`, `exa-py`,
+  SQLAlchemy, Postgres with pgvector
 - Frontend: React 19, Vite, Phosphor icons, native CSS (no UI framework)
 
 ## Prerequisites
 
 - Python 3.12+
 - Node 20+
+- Postgres 16+ with pgvector (local Homebrew install works:
+  `brew install postgresql@18 pgvector`, then create the `verixa`
+  database and role)
 - An [Exa API key](https://exa.ai) and a
   [Groq API key](https://console.groq.com)
 
@@ -64,8 +68,9 @@ API docs are served at http://localhost:8000/docs while the backend runs.
 
 ## Sharing
 
-Every finished turn auto-syncs to the backend's SQLite store
-(`verixa.db`, git-ignored). The Share button copies a public link of the
+Every finished turn auto-syncs to Postgres
+(tables `users`, `threads`, `memories`; connection via `DATABASE_URL`).
+The Share button copies a public link of the
 form `http://localhost:5173/t/<id>` that renders the thread read-only,
 no login needed. Deleting a thread removes
 its shared copy too. Anyone with the link can read it, so share mindfully.
