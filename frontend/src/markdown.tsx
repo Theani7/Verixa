@@ -23,6 +23,8 @@ export function shortHost(url: string): string {
    - Converts native brackets 【1】 to [1]
    - Groups consecutive citations [1] [2] -> [1][2]
    - Removes floating space before punctuation: [1] . -> [1].
+   NOTE: literal <br> tags are NOT rewritten here (a raw newline would break
+   Markdown table rows). They are rendered as real breaks in renderInline.
 */
 export function normalizeCitations(text: string): string {
   let cleaned = text
@@ -35,7 +37,7 @@ export function normalizeCitations(text: string): string {
   return cleaned
 }
 
-/* Inline Markdown: bold, italic, bold-italic, code spans, links, and citation chips. */
+/* Inline Markdown: bold, italic, bold-italic, code spans, links, line breaks, and citation chips. */
 function renderInline(
   text: string,
   keyPrefix: string,
@@ -43,10 +45,11 @@ function renderInline(
   sources: Source[] = [],
 ): ReactNode[] {
   const parts = text.split(
-    /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\(https?:[^)\s]+\)|\[\d+\])/,
+    /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\(https?:[^)\s]+\)|\[\d+\]|<br\s*\/?>)/i,
   )
   return parts.map((part, i) => {
     const key = `${keyPrefix}-${i}`
+    if (/^<br\s*\/?>$/i.test(part)) return <br key={key} />
     const boldItalic = part.match(/^\*\*\*([^*]+)\*\*\*$/)
     if (boldItalic)
       return (
