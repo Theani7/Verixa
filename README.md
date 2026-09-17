@@ -57,7 +57,7 @@ API docs are served at http://localhost:8000/docs while the backend runs.
 | ------ | ---------------- | -------------------------------------------- |
 | GET    | `/api/health`    | Health check                                 |
 | POST   | `/api/ask`       | Full JSON answer: `{ answer, sources }`      |
-| POST   | `/api/ask/stream`| SSE stream: `status`, `sources`, `token`, `done`, `error` events |
+| POST   | `/api/ask/stream`| SSE stream: `status`, `rewrite`, `sources`, `token`, `done`, `error` events |
 
 ## Project layout
 
@@ -75,4 +75,7 @@ frontend/       Vite + React answer-engine UI
   instead of the `/answer` endpoint.
 - Model-native citation markers (e.g. `【2†L1-L9】`) are normalized to
   `[n]` chips on both the backend and the streaming frontend.
+- Follow-ups resolve against thread history: the backend rewrites
+  "how old is he" into a standalone query before searching, and answers
+  see the last few turns for pronouns and context.
 - Thread history lives in `localStorage` under `verixa.threads.v1`.
