@@ -21,6 +21,7 @@ import {
   SignOut,
   Sparkle,
   SpinnerGap,
+  Square,
   Timer,
   Trash,
   Tray,
@@ -98,26 +99,31 @@ function loadCollapsed(): boolean {
   }
 }
 
-const SUGGESTION_POOL: string[] = [
-  'What are the latest developments in small modular nuclear reactors?',
-  'How does retrieval augmented generation reduce hallucinations?',
-  'What did the latest IPCC report say about methane emissions?',
-  'What is happening with the Artemis moon program?',
-  'How much sleep do adults actually need?',
-  'Why do central banks raise interest rates to fight inflation?',
-  'What is CRISPR and how is it used in medicine?',
-  'How does remittance shape the economy of Nepal?',
-  'What caused the fall of the Roman Empire?',
+interface SuggestionItem {
+  topic: string
+  text: string
+}
+
+const SUGGESTION_POOL: SuggestionItem[] = [
+  { topic: 'Clean Energy', text: 'What are the latest developments in small modular nuclear reactors?' },
+  { topic: 'AI & Systems', text: 'How does retrieval augmented generation reduce hallucinations?' },
+  { topic: 'Climate', text: 'What did the latest IPCC report say about methane emissions?' },
+  { topic: 'Space', text: 'What is happening with the Artemis moon program?' },
+  { topic: 'Health & Science', text: 'How much sleep do adults actually need?' },
+  { topic: 'Economy', text: 'Why do central banks raise interest rates to fight inflation?' },
+  { topic: 'Biotech', text: 'What is CRISPR and how is it used in medicine?' },
+  { topic: 'Economics', text: 'How does remittance shape the economy of Nepal?' },
+  { topic: 'History', text: 'What caused the fall of the Roman Empire?' },
 ]
 
-function heroSuggestions(profile: Profile): string[] {
+function heroSuggestions(profile: Profile): SuggestionItem[] {
   const day = Math.floor(Date.now() / 86400000)
   const picked = [0, 1, 2].map(
     (i) => SUGGESTION_POOL[(day + i) % SUGGESTION_POOL.length],
   )
   const place = profile.shareLocation ? profile.location.trim().slice(0, 60) : ''
   if (place !== '') {
-    picked[2] = `What is happening in ${place} this week?`
+    picked[2] = { topic: 'Local', text: `What is happening in ${place} this week?` }
   }
   return picked
 }
@@ -409,6 +415,7 @@ interface ComposerProps {
   hint: string
   mode: AskMode
   onMode: (mode: AskMode) => void
+  onStop?: () => void
 }
 
 const MODES: Array<{
@@ -440,13 +447,24 @@ function Composer({
   hint,
   mode,
   onMode,
+  onStop,
 }: ComposerProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 52), 220)}px`
+  }, [value])
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      onSubmit()
+      if (!loading && value.trim()) {
+        onSubmit()
+      }
     }
   }
 
@@ -463,18 +481,19 @@ function Composer({
         Ask a question
       </label>
       <textarea
+        ref={textareaRef}
         id="verixa-query"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
-        rows={2}
+        rows={1}
       />
       <div className="composer-row">
         <div className="mode-wrap">
           <button
             type="button"
-            className="mode-button"
+            className={`mode-button${mode === 'deep' ? ' mode-deep-active' : ''}`}
             onClick={() => setMenuOpen((v) => !v)}
             aria-expanded={menuOpen}
             aria-haspopup="listbox"
@@ -522,19 +541,32 @@ function Composer({
           )}
         </div>
         <span className="composer-hint">{hint}</span>
-        <button
-          type="button"
-          className="ask-button"
-          onClick={onSubmit}
-          disabled={loading || !value.trim()}
-        >
-          {loading ? (
-            <SpinnerGap size={18} weight="bold" className="spin" />
-          ) : (
-            <ArrowRight size={18} weight="bold" />
-          )}
-          {loading ? 'Asking...' : 'Ask'}
-        </button>
+        {loading && onStop ? (
+          <button
+            type="button"
+            className="ask-button stop-btn"
+            onClick={onStop}
+            aria-label="Stop generating"
+            title="Stop generating"
+          >
+            <Square size={14} weight="fill" />
+            <span>Stop</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ask-button"
+            onClick={onSubmit}
+            disabled={loading || !value.trim()}
+          >
+            {loading ? (
+              <SpinnerGap size={18} weight="bold" className="spin" />
+            ) : (
+              <ArrowRight size={18} weight="bold" />
+            )}
+            {loading ? 'Asking...' : 'Ask'}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -661,6 +693,8 @@ function App() {
   const [threadFilter, setThreadFilter] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
   const searchRef = useRef<HTMLInputElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const threadBottomRef = useRef<HTMLDivElement>(null)
   const [session, setSession] = useState<Session | null>(loadSession)
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -678,6 +712,27 @@ function App() {
     phase === 'thinking' ||
     phase === 'researching'
   const inThread = turns.length > 0 || asked !== ''
+
+  useEffect(() => {
+    if (asked !== '') {
+      threadBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [asked, phase])
+
+  useEffect(() => {
+    function onGlobalKey(e: KeyboardEvent): void {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        const el = e.target as HTMLElement | null
+        if (el?.closest('.modal')) return
+        e.preventDefault()
+        reset()
+        const input = document.getElementById('verixa-query') as HTMLTextAreaElement | null
+        input?.focus()
+      }
+    }
+    window.addEventListener('keydown', onGlobalKey)
+    return () => window.removeEventListener('keydown', onGlobalKey)
+  }, [])
 
   useEffect(() => {
     saveThreads(threads)
@@ -803,6 +858,23 @@ function App() {
     setPhase('done')
   }
 
+  function stopAsk(): void {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    if (asked !== '' && answer !== '') {
+      finishTurn(asked, answer, sources, askMode, resolvedQuery, 0, related)
+    } else {
+      setAsked('')
+      setAnswer('')
+      setSources([])
+      setRelated([])
+      setSteps([])
+      setPhase('idle')
+    }
+  }
+
   async function runAsk(text?: string): Promise<void> {
     const q = (text ?? query).trim()
     if (!q || loading) return
@@ -816,7 +888,6 @@ function App() {
     setOpenSources(null)
     setResolvedQuery('')
     setRelated([])
-    setSteps([])
     setSteps([])
     const history = turns.slice(-4).map((t) => ({
       query: t.query,
@@ -837,12 +908,17 @@ function App() {
       profile,
       mode: askMode,
     })
+
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     try {
       if (!prefs.stream) {
         const res = await fetch(`${API_URL}/api/ask`, {
           method: 'POST',
           headers,
           body: payload,
+          signal: controller.signal,
         })
         if (!res.ok) throw new Error(`The answer engine returned status ${res.status}.`)
         const data = (await res.json()) as {
@@ -876,6 +952,7 @@ function App() {
         method: 'POST',
         headers,
         body: payload,
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error(`The answer engine returned status ${res.status}.`)
       if (!res.body) throw new Error('Streaming is not supported in this browser.')
@@ -930,12 +1007,21 @@ function App() {
         }
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return
+      }
       setError(errorMessage(err))
       setPhase('done')
+    } finally {
+      abortControllerRef.current = null
     }
   }
 
   function openThread(id: string): void {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
     const t = threads.find((x) => x.id === id)
     if (!t) return
     setActiveId(t.id)
@@ -1010,6 +1096,10 @@ function App() {
   }
 
   function reset(): void {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
     setActiveId(null)
     setTurns([])
     setQuery('')
@@ -1102,18 +1192,19 @@ function App() {
       <div className="action-bar">
         <button
           type="button"
-          className="action-btn"
-          aria-label={copied ? 'Copied' : 'Copy answer'}
-          title="Copy"
+          className={`action-btn${copied ? ' copied' : ''}`}
+          aria-label={copied ? 'Copied to clipboard' : 'Copy answer'}
+          title={copied ? 'Copied!' : 'Copy answer'}
           onClick={() => copyAnswer(text, copyKey)}
         >
           <span key={String(copied)} className="copy-pop">
-            {copied ? <Check size={17} /> : <Copy size={17} />}
+            {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
           </span>
+          {copied && <span className="action-feedback">Copied</span>}
         </button>
         <button
           type="button"
-          className="action-btn"
+          className={`action-btn${shareState === 'copied' ? ' copied' : ''}`}
           aria-label={
             shareState === 'copied'
               ? 'Thread link copied'
@@ -1123,7 +1214,7 @@ function App() {
           }
           title={
             shareState === 'copied'
-              ? 'Link copied'
+              ? 'Link copied!'
               : shareState === 'failed'
                 ? 'Sharing failed, try again'
                 : 'Share thread'
@@ -1131,12 +1222,13 @@ function App() {
           onClick={() => shareThread()}
         >
           {shareState === 'copied' ? (
-            <Check size={17} />
+            <Check size={16} weight="bold" />
           ) : shareState === 'failed' ? (
-            <WarningCircle size={17} />
+            <WarningCircle size={16} />
           ) : (
-            <ShareNetwork size={17} />
+            <ShareNetwork size={16} />
           )}
+          {shareState === 'copied' && <span className="action-feedback">Copied link</span>}
         </button>
         <button
           type="button"
@@ -1145,14 +1237,15 @@ function App() {
           title="New thread"
           onClick={() => reset()}
         >
-          <Plus size={17} />
+          <Plus size={16} weight="bold" />
         </button>
         {list.length > 0 && (
           <button
             type="button"
-            className="sources-count-btn"
+            className={`sources-count-btn${open ? ' active' : ''}`}
             onClick={() => toggleSources(key)}
             aria-expanded={open}
+            title={open ? 'Hide detailed sources' : 'View all sources'}
           >
             <span className="favicon-stack sm" aria-hidden="true">
               {favicons(list).map((u) => (
@@ -1165,7 +1258,7 @@ function App() {
                 />
               ))}
             </span>
-            {list.length} sources
+            <span>{list.length} sources</span>
           </button>
         )}
       </div>
@@ -1263,10 +1356,12 @@ function App() {
           type="button"
           className="new-thread"
           onClick={reset}
-          title={sidebarCollapsed ? 'New thread' : undefined}
+          title={sidebarCollapsed ? 'New thread (⌘K)' : undefined}
+          aria-label="New thread"
         >
           <Plus size={18} weight="bold" />
           <span className="new-thread-label">New thread</span>
+          <kbd className="new-thread-kbd" aria-hidden="true">⌘K</kbd>
         </button>
         <div className="thread-search">
           <MagnifyingGlass size={16} aria-hidden="true" />
@@ -1455,23 +1550,27 @@ function App() {
                   loading={loading}
                   mode={askMode}
                   onMode={setAskMode}
+                  onStop={loading ? stopAsk : undefined}
                   placeholder="Ask anything..."
                   hint="Press Enter to ask, Shift plus Enter for a new line"
                 />
               </form>
               <ul className="suggest-list rise rise-3">
                 {heroSuggestions(profile).map((s) => (
-                  <li key={s}>
+                  <li key={s.text}>
                     <button
                       type="button"
                       className="suggest-item"
                       onClick={() => {
-                        setQuery(s)
-                        runAsk(s)
+                        setQuery(s.text)
+                        runAsk(s.text)
                       }}
                     >
-                      <span className="suggest-text">{s}</span>
-                      <ArrowUpRight size={18} className="suggest-arrow" aria-hidden="true" />
+                      <div className="suggest-top">
+                        <span className="suggest-tag">{s.topic}</span>
+                        <ArrowUpRight size={15} className="suggest-arrow" aria-hidden="true" />
+                      </div>
+                      <span className="suggest-text">{s.text}</span>
                     </button>
                   </li>
                 ))}
@@ -1592,6 +1691,8 @@ function App() {
                 </div>
               )}
 
+              <div ref={threadBottomRef} className="thread-scroll-anchor" />
+
               <div className="composer-dock">
                 <form onSubmit={(e) => e.preventDefault()}>
                   <Composer
@@ -1601,6 +1702,7 @@ function App() {
                     loading={loading}
                     mode={askMode}
                     onMode={setAskMode}
+                    onStop={loading ? stopAsk : undefined}
                     placeholder={turns.length > 0 ? 'Ask a follow-up...' : 'Ask anything...'}
                     hint="Press Enter to ask, Shift plus Enter for a new line"
                   />
