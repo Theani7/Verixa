@@ -20,6 +20,8 @@ from verixa.search import web_search
 
 load_dotenv()
 
+DEFAULT_RESULTS = 5
+
 # Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】).
 NATIVE_CITATION_RE = re.compile(r"【(\d+)(?:[†‡][^】]*)?】")
 
@@ -89,7 +91,7 @@ def rewrite_query(query: str, history: list[dict], llm: ChatGroq) -> str:
     return rewritten or query
 
 
-def build_context(result, max_results: int = 5) -> tuple[str, list[dict]]:
+def build_context(result, max_results: int = DEFAULT_RESULTS) -> tuple[str, list[dict]]:
     blocks: list[str] = []
     sources: list[dict] = []
     for i, item in enumerate(result.results[:max_results], start=1):
@@ -100,11 +102,14 @@ def build_context(result, max_results: int = 5) -> tuple[str, list[dict]]:
     return "\n\n".join(blocks), sources
 
 
-def build_answer_chain():
+def build_answer_chain(system_extra: str = ""):
     """LangChain chain: prompt plus Groq chat model for cited answers."""
+    system = SYSTEM_PROMPT
+    if system_extra.strip():
+        system += "\n" + system_extra.strip()[:2000]
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", SYSTEM_PROMPT),
+            ("system", system),
             (
                 "human",
                 "Conversation so far (may be empty):\n{history}\n\n"
@@ -117,15 +122,54 @@ def build_answer_chain():
     return prompt | get_llm()
 
 
-def answer_query(query: str, history: list[dict] | None = None) -> dict:
+def load_memories(user_id, limit: int = 20) -> list[str]:
+    """Saved user memories for prompt context. Empty when signed out."""
+    if user_id is None:
+        return []
+    from backend.db import session_scope
+    from backend.models import Memory
+
+    with session_scope() as session:
+        rows = (
+            session.query(Memory)
+            .filter_by(user_id=user_id)
+            .order_by(Memory.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [row.content[:500] for row in rows]
+
+
+def build_system_extra(profile: dict | None, memories: list[str]) -> str:
+    parts: list[str] = []
+    name = str((profile or {}).get("name") or "").strip()[:100]
+    instructions = str((profile or {}).get("instructions") or "").strip()[:2000]
+    if name:
+        parts.append(f"The user goes by {name}.")
+    if instructions:
+        parts.append(f"User preferences for answers: {instructions}")
+    if memories:
+        parts.append("Things to remember about the user:\n- " + "\n- ".join(memories))
+    return "\n".join(parts)
+
+
+def answer_query(
+    query: str,
+    history: list[dict] | None = None,
+    profile: dict | None = None,
+    num_results: int | None = None,
+    user_id=None,
+) -> dict:
     """Search Exa, then synthesize a cited answer with LangChain + Groq."""
     history = history or []
+    count = num_results or DEFAULT_RESULTS
     llm = get_llm()
     standalone = rewrite_query(query, history, llm)
-    result = web_search(standalone)
-    context, sources = build_context(result)
+    result = web_search(standalone, num_results=count)
+    context, sources = build_context(result, max_results=count)
 
-    chain = build_answer_chain()
+    memories = load_memories(user_id)
+    chain = build_answer_chain(build_system_extra(profile, memories))
     response = chain.invoke(
         {
             "history": format_history(history),

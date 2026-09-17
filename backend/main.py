@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.auth import (
     check_password,
@@ -17,7 +17,7 @@ from backend.auth import (
 )
 from backend.chain import answer_query
 from backend.db import init_db, session_scope
-from backend.models import User
+from backend.models import Memory, User
 from backend.streaming import event_stream
 from backend.threads import clean_turns, delete_thread, get_thread, save_thread, valid_id
 
@@ -47,6 +47,8 @@ class HistoryTurn(BaseModel):
 class AskRequest(BaseModel):
     query: str
     history: list[HistoryTurn] = []
+    num_results: int | None = Field(default=None, ge=1, le=10)
+    profile: dict = Field(default_factory=dict)
 
 
 class ThreadSave(BaseModel):
@@ -68,6 +70,36 @@ class AuthResponse(BaseModel):
 class MeResponse(BaseModel):
     id: str
     email: str
+    created_at: str
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class MemoryCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=1000)
+
+
+def _clean_profile(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "name": str(raw.get("name") or "")[:100],
+        "instructions": str(raw.get("instructions") or "")[:2000],
+    }
+
+
+def _require_user(authorization: str | None):
+    user_id = user_id_from_header(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Sign in required.")
+    with session_scope() as session:
+        user = session.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Sign in required.")
+        return user
 
 
 @app.get("/api/health")
@@ -76,14 +108,32 @@ def health() -> dict:
 
 
 @app.post("/api/ask")
-def ask(req: AskRequest) -> dict:
-    return answer_query(req.query, [t.model_dump() for t in req.history])
+def ask(
+    req: AskRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return answer_query(
+        req.query,
+        [t.model_dump() for t in req.history],
+        profile=_clean_profile(req.profile),
+        num_results=req.num_results,
+        user_id=user_id_from_header(authorization),
+    )
 
 
 @app.post("/api/ask/stream")
-def ask_stream(req: AskRequest) -> StreamingResponse:
+def ask_stream(
+    req: AskRequest,
+    authorization: str | None = Header(default=None),
+) -> StreamingResponse:
     return StreamingResponse(
-        event_stream(req.query, [t.model_dump() for t in req.history]),
+        event_stream(
+            req.query,
+            [t.model_dump() for t in req.history],
+            profile=_clean_profile(req.profile),
+            num_results=req.num_results,
+            user_id=user_id_from_header(authorization),
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -174,11 +224,102 @@ def login(req: AuthRequest) -> dict:
 
 @app.get("/api/me", response_model=MeResponse)
 def me(authorization: str | None = Header(default=None)) -> dict:
-    user_id = user_id_from_header(authorization)
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="Sign in required.")
+    user = _require_user(authorization)
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "created_at": user.created_at.isoformat(),
+    }
+
+
+@app.put("/api/auth/password")
+def change_password(
+    req: PasswordChange,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = _require_user(authorization)
     with session_scope() as session:
-        user = session.get(User, user_id)
-        if user is None:
-            raise HTTPException(status_code=401, detail="Sign in required.")
-        return {"id": str(user.id), "email": user.email}
+        row = session.get(User, user.id)
+        if (
+            row is None
+            or row.password_hash is None
+            or not check_password(req.current_password, row.password_hash)
+        ):
+            raise HTTPException(status_code=401, detail="Current password is wrong.")
+        if not valid_password(req.new_password):
+            raise HTTPException(
+                status_code=400, detail="New password must be 8 to 72 characters."
+            )
+        row.password_hash = hash_password(req.new_password)
+    return {"ok": True}
+
+
+@app.delete("/api/me")
+def delete_account(authorization: str | None = Header(default=None)) -> dict:
+    user = _require_user(authorization)
+    with session_scope() as session:
+        row = session.get(User, user.id)
+        if row is not None:
+            session.delete(row)
+    return {"ok": True}
+
+
+@app.get("/api/memories")
+def list_memories(authorization: str | None = Header(default=None)) -> dict:
+    user = _require_user(authorization)
+    with session_scope() as session:
+        rows = (
+            session.query(Memory)
+            .filter_by(user_id=user.id)
+            .order_by(Memory.created_at.desc())
+            .limit(100)
+            .all()
+        )
+        return {
+            "memories": [
+                {
+                    "id": str(row.id),
+                    "content": row.content,
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in rows
+            ]
+        }
+
+
+@app.post("/api/memories")
+def add_memory(
+    req: MemoryCreate,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = _require_user(authorization)
+    with session_scope() as session:
+        count = session.query(Memory).filter_by(user_id=user.id).count()
+        if count >= 100:
+            raise HTTPException(
+                status_code=400, detail="Memory is full (100 items max)."
+            )
+        row = Memory(user_id=user.id, content=req.content.strip())
+        session.add(row)
+        session.flush()
+        return {"id": str(row.id), "content": row.content}
+
+
+@app.delete("/api/memories/{memory_id}")
+def remove_memory(
+    memory_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = _require_user(authorization)
+    with session_scope() as session:
+        try:
+            import uuid as uuid_lib
+
+            key = uuid_lib.UUID(memory_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Memory not found.")
+        row = session.get(Memory, key)
+        if row is None or row.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Memory not found.")
+        session.delete(row)
+    return {"ok": True}

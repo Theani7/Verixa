@@ -25,21 +25,25 @@ def get_client() -> Exa:
     return Exa(api_key=api_key)
 
 
-def web_search(query: str):
+def web_search(query: str, num_results: int | None = None):
     """Run a semantic web search via Exa and return result items.
 
     Args:
         query: Natural-language query, e.g. "latest developments in LLMs".
+        num_results: Result count override. Omitted unless the caller makes
+            it an intentional product decision (e.g. a user preference).
 
     Returns:
         The Exa SearchResponse with .results (title, url, highlights, ...).
     """
     client = get_client()
-    return client.search(
-        query,
-        type="auto",
-        contents={"highlights": True},
-    )
+    kwargs: dict = {
+        "type": "auto",
+        "contents": {"highlights": True},
+    }
+    if num_results is not None:
+        kwargs["num_results"] = num_results
+    return client.search(query, **kwargs)
 
 
 def format_results(result) -> str:
