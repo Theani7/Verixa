@@ -8,6 +8,7 @@ Per build-with-exa skill:
 """
 
 import os
+import re
 
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
@@ -17,12 +18,21 @@ from seekora.search import web_search
 
 load_dotenv()
 
+# Model-native grounding markers (e.g. 【2†L1-L9】) that must become [2].
+NATIVE_CITATION_RE = re.compile(r"【(\d+)[†‡][^】]*】")
+
 SYSTEM_PROMPT = (
     "You are Seekora, a Perplexity-style research assistant. "
     "Answer the user's question using ONLY the provided web sources. "
-    "Cite every factual claim inline like [1], [2] matching the source numbers. "
+    "Cite every factual claim inline ONLY as [1], [2] matching the source numbers. "
+    "Never use any other citation format: no 【】 brackets, no footnotes. "
     "If the sources don't contain the answer, say so clearly."
 )
+
+
+def normalize_citations(text: str) -> str:
+    """Rewrite model-native 【n†...】 markers as [n] chips the UI renders."""
+    return NATIVE_CITATION_RE.sub(r"[\1]", text)
 
 
 def get_llm() -> ChatGroq:
@@ -69,4 +79,5 @@ def answer_query(query: str) -> dict:
 
     chain = build_answer_chain()
     response = chain.invoke({"query": query, "context": context})
-    return {"answer": response.content, "sources": sources}
+    content = response.content if isinstance(response.content, str) else ""
+    return {"answer": normalize_citations(content), "sources": sources}

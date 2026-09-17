@@ -29,6 +29,14 @@ function hostnameOf(url) {
   }
 }
 
+/* Model-native grounding markers (e.g. 【2†L1-L9】) become [2] chips.
+   The second pass drops a marker still split across stream chunks. */
+function normalizeCitations(text) {
+  return text
+    .replace(/【(\d+)[†‡][^】]*】/g, '[$1]')
+    .replace(/【\d+[†‡][^】]*$/, '')
+}
+
 function loadThreads() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -297,7 +305,7 @@ function App() {
               full += e.text
               setAnswer(full)
             } else if (e.type === 'done') {
-              persistThread(q, full, seenSources)
+              persistThread(q, normalizeCitations(full), seenSources)
               setPhase('done')
             } else if (e.type === 'error') {
               throw new Error(e.message)
@@ -346,7 +354,7 @@ function App() {
 
   async function copyAnswer() {
     try {
-      await navigator.clipboard.writeText(answer)
+      await navigator.clipboard.writeText(normalizeCitations(answer))
       setCopied(true)
     } catch {
       setError('Copy is not available in this browser. Select the text manually.')
@@ -354,6 +362,7 @@ function App() {
   }
 
   const streaming = answer !== '' && phase !== 'done'
+  const displayAnswer = normalizeCitations(answer)
 
   return (
     <div className={`app${sidebarOpen ? ' sidebar-open' : ''}`}>
@@ -487,11 +496,11 @@ function App() {
                   <div className="answer-body">
                     {streaming ? (
                       <p className="stream-text">
-                        {answer}
+                        {displayAnswer}
                         <span className="stream-caret" aria-hidden="true" />
                       </p>
                     ) : (
-                      renderRich(answer)
+                      renderRich(displayAnswer)
                     )}
                   </div>
                 </section>
