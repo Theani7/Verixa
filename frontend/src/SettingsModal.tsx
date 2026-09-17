@@ -3,7 +3,6 @@ import type { FormEvent, ReactNode } from 'react'
 import {
   ArrowSquareOut,
   Brain,
-  SlidersHorizontal,
   Sparkle,
   Trash,
   UserCircle,
@@ -12,22 +11,20 @@ import {
 import {
   addMemory,
   changePassword,
-  deleteAccount,
   deleteMemory,
   fetchMe,
   listMemories,
   updateProfile,
 } from './api'
 import type { Memory, Session } from './api'
-import type { Prefs, Profile } from './types'
+import type { Profile } from './types'
 
 const SUPPORT_URL = 'https://github.com/Theani7/Verixa/issues'
 
-type Category = 'account' | 'preferences' | 'personalization' | 'memory'
+type Category = 'account' | 'personalization' | 'memory'
 
 const CATEGORIES: Array<{ id: Category; label: string; icon: ReactNode }> = [
   { id: 'account', label: 'Account', icon: <UserCircle size={18} /> },
-  { id: 'preferences', label: 'Preferences', icon: <SlidersHorizontal size={18} /> },
   { id: 'personalization', label: 'Personalization', icon: <Sparkle size={18} /> },
   { id: 'memory', label: 'Memory', icon: <Brain size={18} /> },
 ]
@@ -57,13 +54,11 @@ function AccountPane({
   session,
   onSignOut,
   onProfileSaved,
-  onAccountDeleted,
   onOpenAuth,
 }: {
   session: Session | null
   onSignOut: () => void
   onProfileSaved: (me: { full_name: string; username: string }) => void
-  onAccountDeleted: () => void
   onOpenAuth: () => void
 }) {
   const [memberSince, setMemberSince] = useState('')
@@ -76,9 +71,6 @@ function AccountPane({
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [pwBusy, setPwBusy] = useState(false)
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     if (!session) return
@@ -131,19 +123,6 @@ function AccountPane({
       })
     } finally {
       setPwBusy(false)
-    }
-  }
-
-  async function confirmDelete(): Promise<void> {
-    setDeleteBusy(true)
-    setDeleteError('')
-    try {
-      await deleteAccount(token)
-      onAccountDeleted()
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Could not delete account.')
-      setDeleteBusy(false)
-      setConfirmingDelete(false)
     }
   }
 
@@ -253,9 +232,9 @@ function AccountPane({
           Sign out
         </button>
       ) : (
-        <div className="danger-box">
+        <div className="confirm-box">
           <p>Sign out of {session.email}?</p>
-          <div className="danger-actions">
+          <div className="confirm-actions">
             <button
               type="button"
               className="settings-button ghost"
@@ -274,96 +253,6 @@ function AccountPane({
         </div>
       )}
 
-      <h4 className="settings-sub danger">Delete account</h4>
-      {!confirmingDelete ? (
-        <button
-          type="button"
-          className="settings-button danger-outline"
-          onClick={() => setConfirmingDelete(true)}
-        >
-          Delete account...
-        </button>
-      ) : (
-        <div className="danger-box" role="alert">
-          <p>
-            This permanently deletes your account, threads, and memories,
-            including threads on this device. This cannot be undone.
-          </p>
-          {deleteError !== '' && <p className="auth-error">{deleteError}</p>}
-          <div className="danger-actions">
-            <button
-              type="button"
-              className="settings-button ghost"
-              onClick={() => setConfirmingDelete(false)}
-              disabled={deleteBusy}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="settings-button danger-solid"
-              onClick={confirmDelete}
-              disabled={deleteBusy}
-            >
-              {deleteBusy ? 'Deleting...' : 'Delete forever'}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PreferencesPane({
-  prefs,
-  onPrefs,
-}: {
-  prefs: Prefs
-  onPrefs: (prefs: Prefs) => void
-}) {
-  return (
-    <div>
-      <h4 className="settings-sub first">Results per search</h4>
-      <div className="auth-tabs" role="group" aria-label="Results per search">
-        {[3, 5, 10].map((n) => (
-          <button
-            key={n}
-            type="button"
-            aria-pressed={prefs.numResults === n}
-            className={`auth-tab${prefs.numResults === n ? ' active' : ''}`}
-            onClick={() => onPrefs({ ...prefs, numResults: n })}
-          >
-            {n}
-          </button>
-        ))}
-      </div>
-      <p className="settings-lead">
-        More results give the answer broader context but take longer.
-      </p>
-
-      <h4 className="settings-sub">Answer delivery</h4>
-      <div className="auth-tabs" role="group" aria-label="Answer delivery">
-        <button
-          type="button"
-          aria-pressed={prefs.stream}
-          className={`auth-tab${prefs.stream ? ' active' : ''}`}
-          onClick={() => onPrefs({ ...prefs, stream: true })}
-        >
-          Stream live
-        </button>
-        <button
-          type="button"
-          aria-pressed={!prefs.stream}
-          className={`auth-tab${!prefs.stream ? ' active' : ''}`}
-          onClick={() => onPrefs({ ...prefs, stream: false })}
-        >
-          All at once
-        </button>
-      </div>
-      <p className="settings-lead">
-        Streaming types the answer as it arrives. All at once waits for the
-        complete answer.
-      </p>
     </div>
   )
 }
@@ -513,25 +402,19 @@ function MemoryPane({
 
 export default function SettingsModal({
   session,
-  prefs,
-  onPrefs,
   profile,
   onProfile,
   onClose,
   onSignOut,
   onProfileSaved,
-  onAccountDeleted,
   onOpenAuth,
 }: {
   session: Session | null
-  prefs: Prefs
-  onPrefs: (prefs: Prefs) => void
   profile: Profile
   onProfile: (profile: Profile) => void
   onClose: () => void
   onSignOut: () => void
   onProfileSaved: (me: { full_name: string; username: string }) => void
-  onAccountDeleted: () => void
   onOpenAuth: () => void
 }) {
   const [category, setCategory] = useState<Category>('account')
@@ -591,12 +474,8 @@ export default function SettingsModal({
                 session={session}
                 onSignOut={onSignOut}
                 onProfileSaved={onProfileSaved}
-                onAccountDeleted={onAccountDeleted}
                 onOpenAuth={onOpenAuth}
               />
-            )}
-            {category === 'preferences' && (
-              <PreferencesPane prefs={prefs} onPrefs={onPrefs} />
             )}
             {category === 'personalization' && (
               <PersonalizationPane profile={profile} onProfile={onProfile} />

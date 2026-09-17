@@ -324,7 +324,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileMenu, setProfileMenu] = useState(false)
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
-  const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
+  const [prefs] = useState<Prefs>(loadPrefs)
   const [profile, setProfile] = useState<Profile>(loadProfile)
 
   const loading =
@@ -557,18 +557,6 @@ function App() {
     } catch {
       /* ignore */
     }
-  }
-
-  function handleAccountDeleted(): void {
-    setSession(null)
-    setThreads([])
-    try {
-      localStorage.removeItem(AUTH_KEY)
-    } catch {
-      /* ignore */
-    }
-    setSettingsOpen(false)
-    reset()
   }
 
   useEffect(() => {
@@ -999,8 +987,6 @@ function App() {
       {settingsOpen && (
         <SettingsModal
           session={session}
-          prefs={prefs}
-          onPrefs={setPrefs}
           profile={profile}
           onProfile={setProfile}
           onClose={() => setSettingsOpen(false)}
@@ -1009,7 +995,6 @@ function App() {
             setSettingsOpen(false)
           }}
           onProfileSaved={handleProfileSaved}
-          onAccountDeleted={handleAccountDeleted}
           onOpenAuth={() => {
             setSettingsOpen(false)
             setAuthModal('signin')

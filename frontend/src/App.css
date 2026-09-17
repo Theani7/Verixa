@@ -1443,10 +1443,6 @@
   margin-top: 0;
 }
 
-.settings-sub.danger {
-  color: var(--danger);
-}
-
 .support-link {
   display: inline-flex;
   align-items: center;
@@ -1510,39 +1506,20 @@
   border-color: var(--accent);
 }
 
-.settings-button.danger-outline {
-  background: transparent;
-  border: 1px solid var(--danger);
-  color: var(--danger);
-}
-
-.settings-button.danger-outline:hover:not(:disabled) {
-  background: rgba(242, 139, 130, 0.1);
-}
-
-.settings-button.danger-solid {
-  background: var(--danger);
-  color: #191a1a;
-}
-
-.settings-button.danger-solid:hover:not(:disabled) {
-  background: var(--danger);
-  opacity: 0.88;
-}
-
-.danger-box {
-  border: 1px solid var(--danger);
+.confirm-box {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 14px 16px;
 }
 
-.danger-box p {
+.confirm-box p {
   font-size: 14px;
   line-height: 1.6;
   margin: 0 0 12px;
 }
 
-.danger-actions {
+.confirm-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
