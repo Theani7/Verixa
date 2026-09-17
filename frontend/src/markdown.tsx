@@ -358,11 +358,19 @@ export function renderRich(
     flushList()
   })
 
+  // Void HTML elements (hr, br, img, input, …) cannot receive children.
+  // If the last node is one of those, append the caret as a sibling instead.
+  const VOID_TYPES = new Set(['hr', 'br', 'img', 'input', 'area', 'base', 'col', 'embed', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
+
   if (streaming) {
     if (nodes.length > 0) {
       const lastIndex = nodes.length - 1
       const lastNode = nodes[lastIndex]
-      if (isValidElement<{ children?: ReactNode }>(lastNode)) {
+      const isVoid =
+        isValidElement(lastNode) &&
+        typeof lastNode.type === 'string' &&
+        VOID_TYPES.has(lastNode.type)
+      if (isValidElement<{ children?: ReactNode }>(lastNode) && !isVoid) {
         const children = lastNode.props.children
         const newChildren = Array.isArray(children)
           ? [...children, <span key="stream-caret" className="stream-caret" aria-hidden="true" />]
