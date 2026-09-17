@@ -30,7 +30,7 @@ import './App.css'
 import { API_URL, deleteSharedThread, fetchMe, syncThread } from './api'
 import type { Session } from './api'
 import { SourceList } from './article'
-import { faviconFor, hostnameOf, renderRich } from './markdown'
+import { faviconFor, hostnameOf, normalizeCitations, renderRich } from './markdown'
 import AuthModal from './AuthModal'
 import SettingsModal from './SettingsModal'
 import type { AskMode, Prefs, Profile, Source, Thread, Turn } from './types'
@@ -135,13 +135,6 @@ type StreamEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-/* Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】) become
-   [n] chips. The second pass drops a marker split across stream chunks. */
-function normalizeCitations(text: string): string {
-  return text
-    .replace(/【(\d+)(?:[†‡][^】]*)?】/g, '[$1]')
-    .replace(/【\d+(?:[†‡][^】]*)?$/, '')
-}
 
 function isSource(value: unknown): value is Source {
   if (typeof value !== 'object' || value === null) return false
@@ -542,6 +535,108 @@ function Composer({
           )}
           {loading ? 'Asking...' : 'Ask'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+function SourcesPreview({
+  sources,
+  open,
+  onToggle,
+}: {
+  sources: Source[]
+  open: boolean
+  onToggle: () => void
+}) {
+  if (sources.length === 0) return null
+  const visible = sources.slice(0, 4)
+  const extra = sources.length - 4
+
+  return (
+    <section className="sources-preview rise" aria-label="Web sources">
+      <div className="sources-preview-head">
+        <div className="sources-preview-title">
+          <GlobeHemisphereWest size={15} aria-hidden="true" />
+          <span>Sources</span>
+          <span className="sources-badge">{sources.length}</span>
+        </div>
+        {extra > 0 && (
+          <button
+            type="button"
+            className="sources-toggle-btn"
+            onClick={onToggle}
+            aria-expanded={open}
+          >
+            {open ? 'Hide details' : `+${extra} more`}
+          </button>
+        )}
+      </div>
+      <div className="sources-chips-grid">
+        {visible.map((s) => (
+          <a
+            key={s.id ?? s.url}
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            className="source-chip"
+            title={s.title}
+          >
+            <div className="source-chip-top">
+              <img
+                src={faviconFor(s.url)}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+                className="source-chip-favicon"
+              />
+              <span className="source-chip-host">{hostnameOf(s.url)}</span>
+              <span className="source-chip-num">{s.id}</span>
+            </div>
+            <div className="source-chip-title">{s.title}</div>
+          </a>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function formatSecs(ms: number): string {
+  return `${Math.max(1, Math.round(ms / 1000))}s`
+}
+
+function AnswerHeader({
+  mode,
+  durationMs,
+  loading = false,
+}: {
+  mode: Turn['mode']
+  durationMs: number
+  loading?: boolean
+}) {
+  return (
+    <div className="answer-header rise">
+      <div className="answer-brand">
+        <span className={`answer-mark${loading ? ' pulsing' : ''}`} aria-hidden="true">
+          <Sparkle size={14} weight="fill" />
+        </span>
+        <span className="answer-label">{loading ? 'Searching & answering...' : 'Answer'}</span>
+      </div>
+      <div className="answer-meta-tags">
+        {mode === 'deep' && (
+          <span className="deep-badge">
+            <Flask size={13} aria-hidden="true" />
+            Deep research
+          </span>
+        )}
+        {durationMs > 0 && (
+          <span className="researched-pill">
+            <Timer size={13} aria-hidden="true" />
+            Researched {formatSecs(durationMs)}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -960,10 +1055,6 @@ function App() {
   const streaming = answer !== '' && phase !== 'done'
   const displayAnswer = normalizeCitations(answer)
   const firstName = profile.name.trim().split(/\s+/)[0] ?? ''
-
-  function formatSecs(ms: number): string {
-    return `${Math.max(1, Math.round(ms / 1000))}s`
-  }
 
   function favicons(list: Source[]): string[] {
     const seen = new Map<string, string>()
@@ -1401,92 +1492,104 @@ function App() {
                     <div className="bubble-row">
                       <h2 className="user-bubble">{turn.query}</h2>
                     </div>
-                    {turn.mode === 'search' && turn.durationMs > 0 && (
-                      <div className="turn-meta">
-                        <span className="researched">
-                          <Timer size={14} aria-hidden="true" />
-                          Researched {formatSecs(turn.durationMs)}
-                        </span>
-                      </div>
-                    )}
-                    {turn.mode === 'deep' && (
-                      <div className="turn-meta">
-                        <span className="deep-badge">
-                          <Flask size={14} aria-hidden="true" />
-                          Deep research
-                        </span>
-                        {turn.durationMs > 0 && (
-                          <span className="researched">
-                            <Timer size={14} aria-hidden="true" />
-                            Researched {formatSecs(turn.durationMs)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {turn.mode === 'search' &&
-                      searchingLine(turn.query, turn.searchedQuery)}
-                    {answerBody(key, turn.answer, false, turn.sources)}
-                    {actionBar(key, turn.answer, turn.sources, key)}
-                    {openSources === key && (
-                      <SourceList prefix={`${key}-`} sources={turn.sources} />
-                    )}
-                    {relatedSection(turn.related)}
+
+                    <div className="assistant-turn">
+                      {turn.sources.length > 0 && (
+                        <SourcesPreview
+                          sources={turn.sources}
+                          open={openSources === key}
+                          onToggle={() => toggleSources(key)}
+                        />
+                      )}
+
+                      {openSources === key && (
+                        <div className="sources-drawer rise">
+                          <SourceList prefix={`${key}-`} sources={turn.sources} />
+                        </div>
+                      )}
+
+                      <AnswerHeader
+                        mode={turn.mode}
+                        durationMs={turn.durationMs}
+                      />
+
+                      {turn.mode === 'search' &&
+                        searchingLine(turn.query, turn.searchedQuery)}
+
+                      {answerBody(key, turn.answer, false, turn.sources)}
+
+                      {actionBar(key, turn.answer, turn.sources, key)}
+
+                      {relatedSection(turn.related)}
+                    </div>
                   </div>
                 )
               })}
 
               {asked !== '' && (
-                <>
+                <div className="turn live-turn">
                   <div className="bubble-row">
                     <h1 className="user-bubble">{asked}</h1>
                   </div>
 
-                  {loading && (
-                    <StatusSteps
-                      phase={phase}
-                      sourceCount={sources.length}
-                      resolved={resolvedQuery}
-                      steps={steps}
-                    />
-                  )}
+                  <div className="assistant-turn">
+                    {sources.length > 0 && (
+                      <SourcesPreview
+                        sources={sources}
+                        open={openSources === 'live'}
+                        onToggle={() => toggleSources('live')}
+                      />
+                    )}
 
-                  {steps.length > 0 && (
-                    <div className="turn-meta">
-                      <span className="deep-badge">
-                        <Flask size={14} aria-hidden="true" />
-                        Deep research
-                      </span>
-                    </div>
-                  )}
+                    {openSources === 'live' && (
+                      <div className="sources-drawer rise">
+                        <SourceList prefix="live-" sources={sources} />
+                      </div>
+                    )}
 
-                  {answer !== '' &&
-                    answerBody('live', displayAnswer, streaming, sources)}
+                    {loading && (
+                      <StatusSteps
+                        phase={phase}
+                        sourceCount={sources.length}
+                        resolved={resolvedQuery}
+                        steps={steps}
+                      />
+                    )}
 
-                  {error && (
-                    <div className="error-card" role="alert">
-                      <p className="error-line">
-                        <WarningCircle size={18} aria-hidden="true" />
-                        <span>{error}</span>
-                      </p>
-                      <button
-                        type="button"
-                        className="ask-button"
-                        onClick={() => runAsk(asked)}
-                      >
-                        <ArrowClockwise size={18} weight="bold" />
-                        Ask again
-                      </button>
-                    </div>
-                  )}
+                    {(answer !== '' || !loading) && (
+                      <AnswerHeader
+                        mode={askMode}
+                        durationMs={0}
+                        loading={loading}
+                      />
+                    )}
 
-                  {!loading &&
-                    answer !== '' &&
-                    actionBar('live', displayAnswer, sources, 'live')}
-                  {!loading && openSources === 'live' && (
-                    <SourceList prefix="live-" sources={sources} />
-                  )}
-                  {!loading && relatedSection(related)}
-                </>
+                    {answer !== '' &&
+                      answerBody('live', displayAnswer, streaming, sources)}
+
+                    {error && (
+                      <div className="error-card" role="alert">
+                        <p className="error-line">
+                          <WarningCircle size={18} aria-hidden="true" />
+                          <span>{error}</span>
+                        </p>
+                        <button
+                          type="button"
+                          className="ask-button"
+                          onClick={() => runAsk(asked)}
+                        >
+                          <ArrowClockwise size={18} weight="bold" />
+                          Ask again
+                        </button>
+                      </div>
+                    )}
+
+                    {!loading &&
+                      answer !== '' &&
+                      actionBar('live', displayAnswer, sources, 'live')}
+                    {!loading && relatedSection(related)}
+                  </div>
+                </div>
               )}
 
               <div className="composer-dock">

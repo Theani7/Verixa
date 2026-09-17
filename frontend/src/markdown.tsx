@@ -18,8 +18,23 @@ export function shortHost(url: string): string {
   return hostnameOf(url).split('.')[0]
 }
 
-/* Inline Markdown: bold, code spans, links, and citation chips. Cite chips
-   show the source favicon plus domain when the source list is provided. */
+/* Normalizes citations from models or streams:
+   - Converts native brackets 【1】 to [1]
+   - Groups consecutive citations [1] [2] -> [1][2]
+   - Removes floating space before punctuation: [1] . -> [1].
+*/
+export function normalizeCitations(text: string): string {
+  let cleaned = text
+    .replace(/【(\d+)(?:[†‡][^】]*)?】/g, '[$1]')
+    .replace(/【\d+(?:[†‡][^】]*)?$/, '')
+  // Remove space between adjacent citation markers
+  cleaned = cleaned.replace(/(\[\d+\])\s+(?=\[\d+\])/g, '$1')
+  // Remove space before punctuation immediately following citations
+  cleaned = cleaned.replace(/(\[\d+\])\s+([.,;:!?])/g, '$1$2')
+  return cleaned
+}
+
+/* Inline Markdown: bold, code spans, links, and citation chips. */
 function renderInline(
   text: string,
   keyPrefix: string,
@@ -63,7 +78,7 @@ function renderInline(
           key={key}
           className="cite-rich"
           href={`#${citePrefix}source-${cite[1]}`}
-          title={src.url}
+          title={src.title || src.url}
         >
           <img
             src={faviconFor(src.url)}
@@ -99,16 +114,80 @@ function isDelimiter(line: string): boolean {
   )
 }
 
-/* Block Markdown: fences, tables, headings, quotes, rules, lists,
-   paragraphs. Built as elements, never injected HTML, so source text
-   cannot break out. */
+interface RawListItem {
+  indent: number
+  ordered: boolean
+  text: string
+}
+
+interface ListItemNode {
+  ordered: boolean
+  text: string
+  children: ListItemNode[]
+}
+
+function buildListTree(raw: RawListItem[]): ListItemNode[] {
+  if (raw.length === 0) return []
+  const root: ListItemNode[] = []
+  const stack: Array<{ node: ListItemNode; indent: number }> = []
+
+  for (const item of raw) {
+    const node: ListItemNode = {
+      ordered: item.ordered,
+      text: item.text,
+      children: [],
+    }
+
+    while (stack.length > 0 && stack[stack.length - 1].indent >= item.indent) {
+      stack.pop()
+    }
+
+    if (stack.length === 0) {
+      root.push(node)
+    } else {
+      stack[stack.length - 1].node.children.push(node)
+    }
+
+    stack.push({ node, indent: item.indent })
+  }
+
+  return root
+}
+
+function renderListNodes(
+  tree: ListItemNode[],
+  prefix: string,
+  citePrefix: string,
+  sources: Source[],
+): ReactNode {
+  if (tree.length === 0) return null
+  const Tag = tree[0].ordered ? 'ol' : 'ul'
+  return (
+    <Tag key={prefix}>
+      {tree.map((node, i) => {
+        const itemKey = `${prefix}-i${i}`
+        return (
+          <li key={itemKey}>
+            {renderInline(node.text, itemKey, citePrefix, sources)}
+            {node.children.length > 0 &&
+              renderListNodes(node.children, `${itemKey}-sub`, citePrefix, sources)}
+          </li>
+        )
+      })}
+    </Tag>
+  )
+}
+
+/* Block Markdown: fences, tables, headings (h1-h4), quotes, rules, lists (with nested items),
+   and paragraphs. Built as React elements. */
 export function renderRich(
   text: string,
   citePrefix = '',
   sources: Source[] = [],
 ): ReactNode[] {
   const nodes: ReactNode[] = []
-  const fenceSplit = text.split(/```/)
+  const normalized = normalizeCitations(text)
+  const fenceSplit = normalized.split(/```/)
   let key = 0
 
   fenceSplit.forEach((chunk, fi) => {
@@ -120,30 +199,27 @@ export function renderRich(
       return
     }
     const lines = chunk.split('\n')
-    let list: { ordered: boolean; items: string[] } | null = null
+    let rawList: RawListItem[] | null = null
 
     function flushList(): void {
-      if (!list) return
-      const Tag = list.ordered ? 'ol' : 'ul'
-      const items = list.items
+      if (!rawList || rawList.length === 0) {
+        rawList = null
+        return
+      }
+      const tree = buildListTree(rawList)
       const listKey = key++
-      nodes.push(
-        <Tag key={`l-${listKey}`}>
-          {items.map((item, ii) => (
-            <li key={ii}>{renderInline(item, `l-${listKey}-i${ii}`, citePrefix, sources)}</li>
-          ))}
-        </Tag>,
-      )
-      list = null
+      nodes.push(renderListNodes(tree, `l-${listKey}`, citePrefix, sources))
+      rawList = null
     }
 
     let li = 0
     while (li < lines.length) {
       const line = lines[li]
+      const h4 = line.match(/^####\s+(.*)/)
       const h3 = line.match(/^###\s+(.*)/)
       const h2 = line.match(/^##\s+(.*)/)
-      const ul = line.match(/^[-*]\s+(.*)/)
-      const ol = line.match(/^\d+[.)]\s+(.*)/)
+      const h1 = line.match(/^#\s+(.*)/)
+      const listMatch = line.match(/^(\s*)([-*•–—]|\d+[.)])\s+(.*)/)
       const quote = line.match(/^>\s?(.*)/)
       const hr = line.match(/^(---|\*\*\*|___)\s*$/)
 
@@ -187,14 +263,33 @@ export function renderRich(
             </table>
           </div>,
         )
-      } else if (h3 || h2) {
+      } else if (h4) {
         flushList()
         li += 1
-        const Tag = h3 ? 'h3' : 'h4'
-        const content = (h3 ?? h2)?.[1] ?? ''
         const headKey = key++
         nodes.push(
-          <Tag key={`h-${headKey}`}>{renderInline(content, `h-${headKey}`, citePrefix, sources)}</Tag>,
+          <h5 key={`h-${headKey}`}>{renderInline(h4[1], `h-${headKey}`, citePrefix, sources)}</h5>,
+        )
+      } else if (h3) {
+        flushList()
+        li += 1
+        const headKey = key++
+        nodes.push(
+          <h4 key={`h-${headKey}`}>{renderInline(h3[1], `h-${headKey}`, citePrefix, sources)}</h4>,
+        )
+      } else if (h2) {
+        flushList()
+        li += 1
+        const headKey = key++
+        nodes.push(
+          <h3 key={`h-${headKey}`}>{renderInline(h2[1], `h-${headKey}`, citePrefix, sources)}</h3>,
+        )
+      } else if (h1) {
+        flushList()
+        li += 1
+        const headKey = key++
+        nodes.push(
+          <h2 key={`h-${headKey}`}>{renderInline(h1[1], `h-${headKey}`, citePrefix, sources)}</h2>,
         )
       } else if (quote) {
         flushList()
@@ -221,15 +316,18 @@ export function renderRich(
         flushList()
         li += 1
         nodes.push(<hr key={`r-${key++}`} className="md-hr" />)
-      } else if (ul || ol) {
+      } else if (listMatch) {
         li += 1
-        const ordered = Boolean(ol)
-        const item = (ul ?? ol)?.[1] ?? ''
-        if (!list || list.ordered !== ordered) {
-          flushList()
-          list = { ordered, items: [] }
-        }
-        list.items.push(item)
+        const indent = listMatch[1].replace(/\t/g, '  ').length
+        const marker = listMatch[2]
+        const itemText = listMatch[3]
+        const ordered = /^\d+[.)]/.test(marker)
+        if (!rawList) rawList = []
+        rawList.push({ indent, ordered, text: itemText })
+      } else if (rawList && rawList.length > 0 && /^\s{2,}\S/.test(line)) {
+        // Indented continuation of list item
+        rawList[rawList.length - 1].text += ` ${line.trim()}`
+        li += 1
       } else if (line.trim() === '') {
         flushList()
         li += 1
