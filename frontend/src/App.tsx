@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
   ArrowClockwise,
   ArrowRight,
@@ -11,17 +12,42 @@ import {
 } from '@phosphor-icons/react'
 import './App.css'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const API_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const STORAGE_KEY = 'seekora.threads.v1'
 const MAX_THREADS = 30
 
-const SUGGESTIONS = [
+const SUGGESTIONS: string[] = [
   'What are the latest developments in small modular nuclear reactors?',
   'How does retrieval augmented generation reduce hallucinations?',
   'What did the latest IPCC report say about methane emissions?',
 ]
 
-function hostnameOf(url) {
+interface Source {
+  id: number
+  title: string
+  url: string
+  excerpt?: string
+}
+
+interface Thread {
+  id: string
+  title: string
+  query: string
+  answer: string
+  sources: Source[]
+  ts: number
+}
+
+type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'done'
+
+type StreamEvent =
+  | { type: 'status'; phase: Phase }
+  | { type: 'sources'; sources: Source[] }
+  | { type: 'token'; text: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+
+function hostnameOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '')
   } catch {
@@ -31,23 +57,37 @@ function hostnameOf(url) {
 
 /* Model-native grounding markers (e.g. 【2†L1-L9】) become [2] chips.
    The second pass drops a marker still split across stream chunks. */
-function normalizeCitations(text) {
+function normalizeCitations(text: string): string {
   return text
     .replace(/【(\d+)[†‡][^】]*】/g, '[$1]')
     .replace(/【\d+[†‡][^】]*$/, '')
 }
 
-function loadThreads() {
+function isThread(value: unknown): value is Thread {
+  if (typeof value !== 'object' || value === null) return false
+  const t = value as Record<string, unknown>
+  return (
+    typeof t.id === 'string' &&
+    typeof t.title === 'string' &&
+    typeof t.query === 'string' &&
+    typeof t.answer === 'string' &&
+    Array.isArray(t.sources)
+  )
+}
+
+function loadThreads(): Thread[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed : []
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(isThread)
   } catch {
     return []
   }
 }
 
-function saveThreads(threads) {
+function saveThreads(threads: Thread[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(threads.slice(0, MAX_THREADS)))
   } catch {
@@ -55,13 +95,18 @@ function saveThreads(threads) {
   }
 }
 
-function newId() {
+function newId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`
 }
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message
+  return 'Something went wrong while asking.'
+}
+
 /* Inline Markdown: bold, code spans, and [n] citation chips. */
-function renderInline(text, keyPrefix) {
+function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[\d+\])/)
   return parts.map((part, i) => {
     const key = `${keyPrefix}-${i}`
@@ -82,8 +127,8 @@ function renderInline(text, keyPrefix) {
 
 /* Block Markdown: fences, headings, lists, paragraphs. Built as elements,
    never injected HTML, so source text cannot break out. */
-function renderRich(text) {
-  const nodes = []
+function renderRich(text: string): ReactNode[] {
+  const nodes: ReactNode[] = []
   const fenceSplit = text.split(/```/)
   let key = 0
 
@@ -93,15 +138,17 @@ function renderRich(text) {
       return
     }
     const lines = chunk.split('\n')
-    let list = null
+    let list: { ordered: boolean; items: string[] } | null = null
 
-    function flushList() {
+    function flushList(): void {
       if (!list) return
       const Tag = list.ordered ? 'ol' : 'ul'
+      const items = list.items
+      const listKey = key++
       nodes.push(
-        <Tag key={`l-${key++}`}>
-          {list.items.map((item, ii) => (
-            <li key={ii}>{renderInline(item, `l-${key}-i${ii}`)}</li>
+        <Tag key={`l-${listKey}`}>
+          {items.map((item, ii) => (
+            <li key={ii}>{renderInline(item, `l-${listKey}-i${ii}`)}</li>
           ))}
         </Tag>,
       )
@@ -116,10 +163,12 @@ function renderRich(text) {
       if (h3 || h2) {
         flushList()
         const Tag = h3 ? 'h3' : 'h4'
-        nodes.push(<Tag key={`h-${key++}`}>{renderInline((h3 ?? h2)[1], `h-${key}`)}</Tag>)
+        const content = (h3 ?? h2)?.[1] ?? ''
+        const headKey = key++
+        nodes.push(<Tag key={`h-${headKey}`}>{renderInline(content, `h-${headKey}`)}</Tag>)
       } else if (ul || ol) {
         const ordered = Boolean(ol)
-        const item = (ul ?? ol)[1]
+        const item = (ul ?? ol)?.[1] ?? ''
         if (!list || list.ordered !== ordered) {
           flushList()
           list = { ordered, items: [] }
@@ -129,7 +178,8 @@ function renderRich(text) {
         flushList()
       } else {
         flushList()
-        nodes.push(<p key={`p-${key++}`}>{renderInline(line, `p-${key}`)}</p>)
+        const paraKey = key++
+        nodes.push(<p key={`p-${paraKey}`}>{renderInline(line, `p-${paraKey}`)}</p>)
       }
     }
     flushList()
@@ -138,13 +188,15 @@ function renderRich(text) {
   return nodes
 }
 
-const STEPS = [
+type StepId = 'searching' | 'reading' | 'writing'
+
+const STEPS: Array<{ id: StepId; label: string }> = [
   { id: 'searching', label: 'Searching the web' },
   { id: 'reading', label: 'Reading sources' },
   { id: 'writing', label: 'Writing answer' },
 ]
 
-function StatusSteps({ phase, sourceCount }) {
+function StatusSteps({ phase, sourceCount }: { phase: Phase; sourceCount: number }) {
   const activeIdx = STEPS.findIndex((s) => s.id === phase)
   return (
     <div className="status-card" role="status" aria-label="Search progress">
@@ -175,9 +227,18 @@ function StatusSteps({ phase, sourceCount }) {
   )
 }
 
-function Composer({ value, onChange, onSubmit, loading, placeholder, hint }) {
+interface ComposerProps {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  loading: boolean
+  placeholder: string
+  hint: string
+}
 
-  function onKeyDown(e) {
+function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: ComposerProps) {
+
+  function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       onSubmit()
@@ -214,17 +275,17 @@ function Composer({ value, onChange, onSubmit, loading, placeholder, hint }) {
 }
 
 function App() {
-  const [threads, setThreads] = useState(loadThreads)
-  const [activeId, setActiveId] = useState(null)
+  const [threads, setThreads] = useState<Thread[]>(loadThreads)
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [asked, setAsked] = useState('')
   const [answer, setAnswer] = useState('')
-  const [sources, setSources] = useState([])
+  const [sources, setSources] = useState<Source[]>([])
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [phase, setPhase] = useState('idle')
+  const [phase, setPhase] = useState<Phase>('idle')
 
   const loading =
     phase === 'searching' || phase === 'reading' || phase === 'writing'
@@ -239,7 +300,7 @@ function App() {
     return () => clearTimeout(t)
   }, [copied])
 
-  function persistThread(q, nextAnswer, nextSources) {
+  function persistThread(q: string, nextAnswer: string, nextSources: Source[]): void {
     setThreads((prev) => {
       if (activeId) {
         return prev.map((t) =>
@@ -248,7 +309,7 @@ function App() {
             : t,
         )
       }
-      const thread = {
+      const thread: Thread = {
         id: newId(),
         title: q.length > 60 ? `${q.slice(0, 60)}...` : q,
         query: q,
@@ -261,7 +322,7 @@ function App() {
     })
   }
 
-  async function runAsk(text) {
+  async function runAsk(text?: string): Promise<void> {
     const q = (text ?? query).trim()
     if (!q || loading) return
     setPhase('searching')
@@ -273,7 +334,7 @@ function App() {
     setCopied(false)
     setSourcesOpen(false)
     let full = ''
-    let seenSources = []
+    let seenSources: Source[] = []
     try {
       const res = await fetch(`${API_URL}/api/ask/stream`, {
         method: 'POST',
@@ -287,15 +348,15 @@ function App() {
       let buf = ''
       for (;;) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done || value === undefined) break
         buf += decoder.decode(value, { stream: true })
-        let idx
+        let idx: number
         while ((idx = buf.indexOf('\n\n')) !== -1) {
           const frame = buf.slice(0, idx)
           buf = buf.slice(idx + 2)
           for (const line of frame.split('\n')) {
             if (!line.startsWith('data: ')) continue
-            const e = JSON.parse(line.slice(6))
+            const e = JSON.parse(line.slice(6)) as StreamEvent
             if (e.type === 'status') {
               setPhase(e.phase)
             } else if (e.type === 'sources') {
@@ -314,12 +375,12 @@ function App() {
         }
       }
     } catch (err) {
-      setError(err.message ?? 'Something went wrong while asking.')
+      setError(errorMessage(err))
       setPhase('done')
     }
   }
 
-  function openThread(id) {
+  function openThread(id: string): void {
     const t = threads.find((x) => x.id === id)
     if (!t) return
     setActiveId(t.id)
@@ -334,12 +395,12 @@ function App() {
     setPhase('done')
   }
 
-  function deleteThread(id) {
+  function deleteThread(id: string): void {
     setThreads((prev) => prev.filter((t) => t.id !== id))
     if (id === activeId) reset()
   }
 
-  function reset() {
+  function reset(): void {
     setActiveId(null)
     setQuery('')
     setAsked('')
@@ -352,7 +413,7 @@ function App() {
     setPhase('idle')
   }
 
-  async function copyAnswer() {
+  async function copyAnswer(): Promise<void> {
     try {
       await navigator.clipboard.writeText(normalizeCitations(answer))
       setCopied(true)
@@ -522,71 +583,71 @@ function App() {
 
               {sources.length > 0 && phase === 'done' && (
                 <section className="rise rise-1" aria-label="Sources">
-                      <button
-                        type="button"
-                        className="sources-toggle"
-                        onClick={() => setSourcesOpen((v) => !v)}
-                        aria-expanded={sourcesOpen}
-                        aria-controls="sources-list"
-                      >
-                        <span className="sources-count">{sources.length}</span>
-                        Sources
-                        <CaretDown
-                          size={16}
-                          weight="bold"
-                          className={`sources-caret${sourcesOpen ? ' open' : ''}`}
-                        />
-                      </button>
-                      {sourcesOpen && (
-                        <ol className="sources-list" id="sources-list">
-                          {sources.map((s) => (
-                            <li
-                              key={s.id ?? s.url}
-                              id={`source-${s.id}`}
-                              className="source-card"
+                  <button
+                    type="button"
+                    className="sources-toggle"
+                    onClick={() => setSourcesOpen((v) => !v)}
+                    aria-expanded={sourcesOpen}
+                    aria-controls="sources-list"
+                  >
+                    <span className="sources-count">{sources.length}</span>
+                    Sources
+                    <CaretDown
+                      size={16}
+                      weight="bold"
+                      className={`sources-caret${sourcesOpen ? ' open' : ''}`}
+                    />
+                  </button>
+                  {sourcesOpen && (
+                    <ol className="sources-list" id="sources-list">
+                      {sources.map((s) => (
+                        <li
+                          key={s.id ?? s.url}
+                          id={`source-${s.id}`}
+                          className="source-card"
+                        >
+                          <span className="source-num">{s.id}</span>
+                          <div className="source-meta">
+                            <a
+                              className="source-link"
+                              href={s.url}
+                              target="_blank"
+                              rel="noreferrer"
                             >
-                              <span className="source-num">{s.id}</span>
-                              <div className="source-meta">
-                                <a
-                                  className="source-link"
-                                  href={s.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {s.title}
-                                </a>
-                                {s.excerpt && (
-                                  <p className="source-excerpt">{s.excerpt}</p>
-                                )}
-                                <span className="source-host">
-                                  <img
-                                    src={`https://www.google.com/s2/favicons?domain=${hostnameOf(s.url)}&sz=64`}
-                                    alt=""
-                                    loading="lazy"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none'
-                                    }}
-                                  />
-                                  {hostnameOf(s.url)}
-                                </span>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </section>
+                              {s.title}
+                            </a>
+                            {s.excerpt && (
+                              <p className="source-excerpt">{s.excerpt}</p>
+                            )}
+                            <span className="source-host">
+                              <img
+                                src={`https://www.google.com/s2/favicons?domain=${hostnameOf(s.url)}&sz=64`}
+                                alt=""
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none'
+                                }}
+                              />
+                              {hostnameOf(s.url)}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
                   )}
+                </section>
+              )}
 
-                  {phase === 'done' && (
-                    <button
-                      type="button"
-                      className="new-question rise rise-2"
-                      onClick={reset}
-                    >
-                      <ArrowClockwise size={18} />
-                      New question
-                    </button>
-                  )}
+              {phase === 'done' && (
+                <button
+                  type="button"
+                  className="new-question rise rise-2"
+                  onClick={reset}
+                >
+                  <ArrowClockwise size={18} />
+                  New question
+                </button>
+              )}
 
               <div className="composer-dock">
                 <form onSubmit={(e) => e.preventDefault()}>
