@@ -1,5 +1,6 @@
 """FastAPI entrypoint for the Verixa Perplexity clone."""
 
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 from backend.auth import (
+    base_username,
     check_password,
     create_token,
     hash_password,
@@ -203,6 +205,24 @@ def _credentials(req: AuthRequest) -> tuple[str, str]:
     return email, req.password
 
 
+def _unique_username(session, email: str) -> str:
+    """Email-based username, suffixed with random digits until unique."""
+    import random
+
+    base = base_username(email)
+    candidate = base
+    for _ in range(20):
+        if (
+            session.query(User)
+            .filter(func.lower(User.username) == candidate.lower())
+            .first()
+            is None
+        ):
+            return candidate
+        candidate = f"{base}{random.randint(1, 9999)}"[:20]
+    return f"{base}{uuid.uuid4().hex[:6]}"[:20]
+
+
 @app.post("/api/auth/signup", response_model=AuthResponse)
 def signup(req: AuthRequest) -> dict:
     email, password = _credentials(req)
@@ -211,11 +231,18 @@ def signup(req: AuthRequest) -> dict:
             raise HTTPException(
                 status_code=409, detail="An account with this email already exists."
             )
-        user = User(email=email, password_hash=hash_password(password))
+        username = _unique_username(session, email)
+        user = User(email=email, password_hash=hash_password(password), username=username)
         session.add(user)
         session.flush()
         token = create_token(user.id)
-        return {"token": token, "id": str(user.id), "email": user.email}
+        return {
+            "token": token,
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name or "",
+            "username": user.username or "",
+        }
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)
@@ -230,7 +257,13 @@ def login(req: AuthRequest) -> dict:
         ):
             raise HTTPException(status_code=401, detail="Invalid email or password.")
         token = create_token(user.id)
-        return {"token": token, "id": str(user.id), "email": user.email}
+        return {
+            "token": token,
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name or "",
+            "username": user.username or "",
+        }
 
 
 @app.get("/api/me", response_model=MeResponse)

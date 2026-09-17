@@ -29,6 +29,13 @@ def valid_username(username: str) -> bool:
     return bool(USERNAME_RE.match(username))
 
 
+def base_username(email: str) -> str:
+    """Sanitized email local-part to seed a username suggestion."""
+    local = email.split("@")[0].lower()
+    base = re.sub(r"[^a-z0-9_]+", "_", local).strip("_")[:12].strip("_")
+    return base if len(base) >= 3 else "user"
+
+
 def valid_password(password: str) -> bool:
     return MIN_PASSWORD <= len(password.encode()) <= MAX_PASSWORD
 
