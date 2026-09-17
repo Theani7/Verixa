@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
+  ArrowBendDownRight,
   ArrowClockwise,
   ArrowRight,
   ArrowUpRight,
@@ -26,6 +27,7 @@ import {
   Trash,
   Tray,
   WarningCircle,
+  X,
 } from '@phosphor-icons/react'
 import './App.css'
 import { API_URL, deleteSharedThread, fetchMe, syncThread } from './api'
@@ -1274,7 +1276,10 @@ function App() {
     if (questions.length === 0) return null
     return (
       <section className="related rise" aria-label="Related questions">
-        <p className="related-label">Related</p>
+        <p className="related-label">
+          <ArrowBendDownRight size={15} aria-hidden="true" />
+          <span>Related questions</span>
+        </p>
         <ul className="related-list">
           {questions.map((rq) => (
             <li key={rq}>
@@ -1367,10 +1372,31 @@ function App() {
             type="search"
             value={threadFilter}
             onChange={(e) => setThreadFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setThreadFilter('')
+                e.currentTarget.blur()
+              }
+            }}
             placeholder="Search threads"
             autoComplete="off"
           />
-          <kbd aria-hidden="true">/</kbd>
+          {threadFilter ? (
+            <button
+              type="button"
+              className="thread-search-clear"
+              onClick={() => {
+                setThreadFilter('')
+                searchRef.current?.focus()
+              }}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <X size={14} />
+            </button>
+          ) : (
+            <kbd aria-hidden="true">/</kbd>
+          )}
         </div>
         {threads.length === 0 ? (
           <p className="thread-empty">
