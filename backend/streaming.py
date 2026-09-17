@@ -19,23 +19,30 @@ from backend.chain import (
     build_answer_chain,
     build_chat_chain,
     build_context,
+    build_deep_answer_chain,
     build_system_extra,
     format_history,
     get_llm,
     load_memory_context,
     maybe_learn_memories,
+    normalize_citations,
     related_questions,
     rewrite_query,
     route_message,
 )
 from backend.deep import (
-    DEEP_PER_SEARCH,
+    DEEP_FOLLOWUPS,
+    DEEP_FULLTEXT_CHARS,
+    DEEP_MAX_ROUNDS,
+    DEEP_TEXT_FETCH_TOP,
+    collect_round,
     decompose,
     merge_results,
     reflect_gaps,
-    search_many,
+    run_research_round,
+    verify_draft,
 )
-from verixa.search import web_search
+from verixa.search import get_page_texts, web_search
 
 
 def _frame(obj: dict) -> str:
@@ -89,50 +96,101 @@ async def event_stream(
             history_text = format_history(history)
             yield _frame({"type": "progress", "label": "Planning research angles"})
             plan = await run_in_threadpool(decompose, query, history_text, llm)
-            collected = []
-            # Parallel fan-out: one progress frame for the batch, all Exa
-            # searches run concurrently via a thread pool (no extra latency
-            # per angle vs sequential awaits).
-            yield _frame(
-                {
-                    "type": "progress",
-                    "label": f"Searching {len(plan)} angles in parallel",
-                }
-            )
-            try:
-                batch = await run_in_threadpool(search_many, plan, DEEP_PER_SEARCH)
-                collected.extend(batch)
-            except Exception:
-                pass
-            context, sources = merge_results(collected)
-            yield _frame({"type": "progress", "label": "Checking what is missing"})
-            followups = await run_in_threadpool(reflect_gaps, query, context, llm)
-            if followups:
-                yield _frame(
-                    {
-                        "type": "progress",
-                        "label": f"Running {len(followups)} follow-up searches in parallel",
-                    }
-                )
-                try:
-                    batch = await run_in_threadpool(
-                        search_many, followups, DEEP_PER_SEARCH
+            collected: list = []
+            seen_queries: set[str] = set()
+            context, sources = "", []
+            seen_str = ""
+            for round_no in range(1, DEEP_MAX_ROUNDS + 1):
+                if round_no == 1:
+                    yield _frame(
+                        {
+                            "type": "progress",
+                            "label": f"Round 1: searching {len(plan)} angles in parallel",
+                        }
                     )
-                    collected.extend(batch)
+                    context, sources, _, seen_str = await run_in_threadpool(
+                        collect_round,
+                        query,
+                        plan,
+                        collected,
+                        seen_queries,
+                        llm,
+                        round_no,
+                    )
+                else:
+                    yield _frame(
+                        {
+                            "type": "progress",
+                            "label": f"Round {round_no}: checking what is still missing",
+                        }
+                    )
+                    followups = await run_in_threadpool(
+                        reflect_gaps, query, context, llm, DEEP_FOLLOWUPS, seen_str
+                    )
+                    if not followups:
+                        break
+                    yield _frame(
+                        {
+                            "type": "progress",
+                            "label": f"Round {round_no}: running {len(followups)} follow-ups in parallel",
+                        }
+                    )
+                    await run_in_threadpool(
+                        run_research_round, followups, seen_queries, collected
+                    )
+                    context, sources, _, seen_str = await run_in_threadpool(
+                        collect_round, query, [], collected, seen_queries, llm, 0
+                    )
+                if not collected:
+                    break
+            yield _frame({"type": "progress", "label": "Reading top sources in full"})
+            if sources:
+                top_urls = [s["url"] for s in sources[:DEEP_TEXT_FETCH_TOP]]
+                try:
+                    fulltexts = await run_in_threadpool(
+                        get_page_texts, top_urls, DEEP_FULLTEXT_CHARS
+                    )
                 except Exception:
-                    pass
-            if followups:
-                context, sources = merge_results(collected)
+                    fulltexts = {}
+                if fulltexts:
+                    context, sources = merge_results(collected, fulltexts=fulltexts)
             yield _frame({"type": "sources", "sources": sources})
             yield _status("writing")
-            chain = build_answer_chain(extra)
-            full_text = ""
+            yield _frame(
+                {"type": "progress", "label": "Drafting the report"}
+            )
+            chain = build_deep_answer_chain(extra)
+            draft_text = ""
             async for text in _stream_text(
                 chain,
                 {"history": history_text, "query": query, "context": context},
             ):
-                full_text += text
-                yield _frame({"type": "token", "text": text})
+                draft_text += text
+            # Verify-then-publish: fact-check the draft, stream only the
+            # verified final text so tokens never show unverified claims.
+            yield _frame({"type": "progress", "label": "Verifying claims"})
+            try:
+                problems = await run_in_threadpool(
+                    verify_draft, query, context, draft_text, llm
+                )
+            except Exception:
+                problems = []
+            full_text = draft_text
+            if problems:
+                feedback = "\n- ".join(problems)
+                yield _frame(
+                    {"type": "progress", "label": "Rewriting unsupported claims"}
+                )
+                chain = build_deep_answer_chain(extra, draft_feedback=feedback)
+                full_text = ""
+                async for text in _stream_text(
+                    chain,
+                    {"history": history_text, "query": query, "context": context},
+                ):
+                    full_text += text
+            full_text = normalize_citations(full_text)
+            for chunk in [full_text[i : i + 1200] for i in range(0, len(full_text), 1200)]:
+                yield _frame({"type": "token", "text": chunk})
         except Exception as exc:
             yield _frame({"type": "error", "message": f"Deep research failed: {exc}"})
             return

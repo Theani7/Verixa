@@ -204,6 +204,47 @@ def build_answer_chain(system_extra: str = ""):
     return prompt | get_llm()
 
 
+DEEP_SYNTHESIS_PROMPT = (
+    "You are Verixa, a senior research analyst writing a deep-research report. "
+    "Answer the user's question using ONLY the provided numbered web sources. "
+    "Cite every factual claim inline ONLY as [1], [2] matching the source numbers. "
+    "Never use any other citation format: no 【】 brackets, no footnotes. "
+    "Use pure Markdown only: never emit HTML tags such as <br>, <div>, <span>. "
+    "Structure the report with a short direct answer up front, then sections with "
+    "## headings (background, evidence, viewpoints including counter-views, and "
+    "outlook or conclusion as fitting). Present competing claims with their "
+    "citations side by side instead of picking one silently. "
+    "Write authoritative, direct synthesis with no meta-commentary about the "
+    "sources themselves. If the sources do not cover part of the question, "
+    "say so explicitly rather than filling the gap from general knowledge."
+)
+
+
+def build_deep_answer_chain(system_extra: str = "", draft_feedback: str = ""):
+    """LangChain chain for deep-research reports: structured, verified synthesis."""
+    system = DEEP_SYNTHESIS_PROMPT
+    if system_extra.strip():
+        system += "\n" + system_extra.strip()[:2000]
+    if draft_feedback.strip():
+        system += (
+            "\nA fact-check editor reviewed an earlier draft and found these "
+            f"unsupported claims; do not repeat them unless the sources support them:\n{draft_feedback[:2000]}"
+        )
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system),
+            (
+                "human",
+                "Conversation so far (may be empty):\n{history}\n\n"
+                "Research question: {query}\n\nNumbered web sources:\n{context}\n\n"
+                "Write the research report with inline citations. "
+                "Use Markdown headings, bold, bullet lists, and tables where they help readability.",
+            ),
+        ]
+    )
+    return prompt | get_llm()
+
+
 def load_memory_context(user_id, limit: int = 20) -> tuple[list[str], bool]:
     """Saved memories plus whether auto-learn is on. Empty/off when signed out."""
     if user_id is None:

@@ -15,6 +15,14 @@ from exa_py import Exa
 load_dotenv()
 
 
+#: Default Exa contents for every search: query-relevant highlights plus a
+#: short full-text extract so deep research grounds on real page content.
+_DEFAULT_CONTENTS: dict = {
+    "highlights": True,
+    "text": {"max_characters": 2000},
+}
+
+
 def get_client() -> Exa:
     api_key = os.getenv("EXA_API_KEY")
     if not api_key:
@@ -25,13 +33,20 @@ def get_client() -> Exa:
     return Exa(api_key=api_key)
 
 
-def web_search(query: str, num_results: int | None = None):
+def web_search(
+    query: str,
+    num_results: int | None = None,
+    contents: dict | None = None,
+):
     """Run a semantic web search via Exa and return result items.
 
     Args:
         query: Natural-language query, e.g. "latest developments in LLMs".
         num_results: Result count override. Omitted unless the caller makes
             it an intentional product decision (e.g. a user preference).
+        contents: Exa contents options override. Defaults to highlights plus
+            a short text extract so deep research gets real page content,
+            not just snippets.
 
     Returns:
         The Exa SearchResponse with .results (title, url, highlights, ...).
@@ -39,11 +54,36 @@ def web_search(query: str, num_results: int | None = None):
     client = get_client()
     kwargs: dict = {
         "type": "auto",
-        "contents": {"highlights": True},
+        "contents": contents if contents is not None else _DEFAULT_CONTENTS,
     }
     if num_results is not None:
         kwargs["num_results"] = num_results
     return client.search(query, **kwargs)
+
+
+def get_page_texts(urls: list[str], max_chars: int = 4000) -> dict[str, str]:
+    """Fetch full page text for URLs via Exa /contents. Never raises.
+
+    Returns a mapping of url -> cleaned text (possibly empty on failure).
+    """
+    cleaned: dict[str, str] = {}
+    urls = [u for u in urls if u]
+    if not urls:
+        return cleaned
+    try:
+        client = get_client()
+        response = client.get_contents(
+            urls,
+            text={"max_characters": max_chars},
+        )
+    except Exception:
+        return cleaned
+    for item in getattr(response, "results", []) or []:
+        url = getattr(item, "url", "") or ""
+        text = getattr(item, "text", "") or ""
+        if url and text:
+            cleaned[url] = text[:max_chars]
+    return cleaned
 
 
 def format_results(result) -> str:
