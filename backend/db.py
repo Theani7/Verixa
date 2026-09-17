@@ -38,6 +38,12 @@ def init_db() -> None:
         conn.execute(
             text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users (username)")
         )
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS memory_enabled BOOLEAN DEFAULT TRUE")
+        )
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS memory_auto BOOLEAN DEFAULT TRUE")
+        )
 
 
 @contextmanager

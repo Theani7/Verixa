@@ -122,14 +122,17 @@ def build_answer_chain(system_extra: str = ""):
     return prompt | get_llm()
 
 
-def load_memories(user_id, limit: int = 20) -> list[str]:
-    """Saved user memories for prompt context. Empty when signed out."""
+def load_memory_context(user_id, limit: int = 20) -> tuple[list[str], bool]:
+    """Saved memories plus whether auto-learn is on. Empty/off when signed out."""
     if user_id is None:
-        return []
+        return [], False
     from backend.db import session_scope
-    from backend.models import Memory
+    from backend.models import Memory, User
 
     with session_scope() as session:
+        user = session.get(User, user_id)
+        if user is None or not user.memory_enabled:
+            return [], False
         rows = (
             session.query(Memory)
             .filter_by(user_id=user_id)
@@ -137,7 +140,95 @@ def load_memories(user_id, limit: int = 20) -> list[str]:
             .limit(limit)
             .all()
         )
-        return [row.content[:500] for row in rows]
+        return [row.content[:500] for row in rows], bool(user.memory_auto)
+
+
+def load_memories(user_id, limit: int = 20) -> list[str]:
+    memories, _ = load_memory_context(user_id, limit)
+    return memories
+
+
+EXTRACT_SYSTEM_PROMPT = (
+    "From this user-assistant exchange, extract durable facts about the USER "
+    "worth remembering long-term: name, location, work, preferences, goals, "
+    "interests. Ignore one-off question topics. Return a JSON array of short "
+    "strings (max 15 words each), at most 3. Return [] if nothing is worth "
+    "remembering. Return ONLY the JSON array."
+)
+
+MAX_MEMORIES = 100
+
+
+def extract_memories(query: str, answer: str, llm) -> list[str]:
+    """Candidate long-term facts from one exchange. Never raises."""
+    try:
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", EXTRACT_SYSTEM_PROMPT),
+                (
+                    "human",
+                    "User: {query}\nAssistant: {answer}",
+                ),
+            ]
+        )
+        response = (prompt | llm).invoke(
+            {"query": query[:1000], "answer": answer[:3000]}
+        )
+        content = response.content if isinstance(response.content, str) else ""
+        text = content.strip()
+        if text.startswith("```"):
+            text = text.strip("`").strip()
+            if "\n" in text:
+                text = text.split("\n", 1)[1]
+        import json as json_lib
+
+        parsed = json_lib.loads(text)
+        if not isinstance(parsed, list):
+            return []
+        out: list[str] = []
+        for item in parsed[:3]:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip()[:200])
+        return out
+    except Exception:
+        return []
+
+
+def maybe_learn_memories(
+    user_id, query: str, answer: str, llm, auto: bool
+) -> None:
+    """Persist newly learned facts. Best-effort; never breaks answers."""
+    if user_id is None or not auto or not answer.strip():
+        return
+    try:
+        from backend.db import session_scope
+        from backend.models import Memory
+
+        candidates = extract_memories(query, answer, llm)
+        if not candidates:
+            return
+        with session_scope() as session:
+            existing = [
+                row.content
+                for row in session.query(Memory)
+                .filter_by(user_id=user_id)
+                .all()
+            ]
+            lowered = [e.lower() for e in existing]
+            fresh: list[str] = []
+            for cand in candidates:
+                low = cand.lower()
+                if any(low in e or e in low for e in lowered if len(e) > 15 or len(low) > 15):
+                    continue
+                if low in lowered:
+                    continue
+                fresh.append(cand)
+                lowered.append(low)
+            room = MAX_MEMORIES - len(existing)
+            for cand in fresh[: max(room, 0)]:
+                session.add(Memory(user_id=user_id, content=cand))
+    except Exception:
+        pass
 
 
 GENDER_LABELS = {
@@ -216,7 +307,7 @@ def answer_query(
     result = web_search(standalone, num_results=count)
     context, sources = build_context(result, max_results=count)
 
-    memories = load_memories(user_id)
+    memories, auto_learn = load_memory_context(user_id)
     chain = build_answer_chain(build_system_extra(profile, memories))
     response = chain.invoke(
         {
@@ -226,6 +317,7 @@ def answer_query(
         }
     )
     content = response.content if isinstance(response.content, str) else ""
+    maybe_learn_memories(user_id, query, content, llm, auto_learn)
     return {
         "answer": normalize_citations(content),
         "sources": sources,

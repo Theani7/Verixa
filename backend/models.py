@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,8 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(
         String(30), unique=True, nullable=True
     )
+    memory_enabled: Mapped[bool] = mapped_column(default=True)
+    memory_auto: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

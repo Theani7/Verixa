@@ -21,7 +21,8 @@ from backend.chain import (
     build_system_extra,
     format_history,
     get_llm,
-    load_memories,
+    load_memory_context,
+    maybe_learn_memories,
     rewrite_query,
 )
 from verixa.search import web_search
@@ -61,8 +62,9 @@ async def event_stream(
     yield _status("writing")
 
     try:
-        memories = await run_in_threadpool(load_memories, user_id)
+        memories, auto_learn = await run_in_threadpool(load_memory_context, user_id)
         chain = build_answer_chain(build_system_extra(profile, memories))
+        full_text = ""
         async for chunk in chain.astream(
             {
                 "history": format_history(history),
@@ -80,9 +82,13 @@ async def event_stream(
                     if isinstance(block, dict)
                 )
             if text:
+                full_text += text
                 yield _frame({"type": "token", "text": text})
     except Exception as exc:
         yield _frame({"type": "error", "message": f"Answer generation failed: {exc}"})
         return
 
     yield _frame({"type": "done"})
+    await run_in_threadpool(
+        maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
+    )

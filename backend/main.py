@@ -80,11 +80,15 @@ class MeResponse(BaseModel):
     full_name: str
     username: str
     created_at: str
+    memory_enabled: bool
+    memory_auto: bool
 
 
 class ProfileUpdate(BaseModel):
-    full_name: str = Field(default="", max_length=120)
-    username: str = Field(default="", max_length=30)
+    full_name: str | None = Field(default=None, max_length=120)
+    username: str | None = Field(default=None, max_length=30)
+    memory_enabled: bool | None = None
+    memory_auto: bool | None = None
 
 
 class PasswordChange(BaseModel):
@@ -302,6 +306,8 @@ def _me_dict(user) -> dict:
         "full_name": user.full_name or "",
         "username": user.username or "",
         "created_at": user.created_at.isoformat(),
+        "memory_enabled": bool(user.memory_enabled),
+        "memory_auto": bool(user.memory_auto),
     }
 
 
@@ -311,30 +317,36 @@ def update_me(
     authorization: str | None = Header(default=None),
 ) -> dict:
     user = _require_user(authorization)
-    username = req.username.strip()
-    if username and not valid_username(username):
-        raise HTTPException(
-            status_code=400,
-            detail="Username must be 3 to 20 letters, numbers, or underscores.",
-        )
     with session_scope() as session:
         row = session.get(User, user.id)
         if row is None:
             raise HTTPException(status_code=401, detail="Sign in required.")
-        if username:
-            taken = (
-                session.query(User)
-                .filter(func.lower(User.username) == username.lower(), User.id != row.id)
-                .first()
-            )
-            if taken is not None:
+        if req.username is not None:
+            username = req.username.strip()
+            if username and not valid_username(username):
                 raise HTTPException(
-                    status_code=409, detail="That username is already taken."
+                    status_code=400,
+                    detail="Username must be 3 to 20 letters, numbers, or underscores.",
                 )
-            row.username = username
-        else:
-            row.username = None
-        row.full_name = req.full_name.strip()[:120]
+            if username:
+                taken = (
+                    session.query(User)
+                    .filter(func.lower(User.username) == username.lower(), User.id != row.id)
+                    .first()
+                )
+                if taken is not None:
+                    raise HTTPException(
+                        status_code=409, detail="That username is already taken."
+                    )
+                row.username = username
+            else:
+                row.username = None
+        if req.full_name is not None:
+            row.full_name = req.full_name.strip()[:120]
+        if req.memory_enabled is not None:
+            row.memory_enabled = req.memory_enabled
+        if req.memory_auto is not None:
+            row.memory_auto = req.memory_auto
         session.flush()
         return _me_dict(row)
 
