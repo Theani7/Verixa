@@ -28,8 +28,6 @@ from backend.chain import (
     DEEP_PER_SEARCH,
     DEEP_SUBQUERIES,
     MAX_SOURCES,
-    build_answer_chain,
-    build_context,
     build_deep_answer_chain,
     build_system_extra,
     format_history,
@@ -38,6 +36,15 @@ from backend.chain import (
     maybe_learn_memories,
     normalize_citations,
     related_questions,
+)
+from backend.verify import (
+    ClaimVerification,
+    VerificationReport,
+    extract_claims,
+    needs_rewrite,
+    rewrite_feedback,
+    report_to_dict,
+    verify_claims_batch,
 )
 from verixa.search import get_page_texts, web_search
 
@@ -147,27 +154,12 @@ def reflect_gaps(
 
 
 def verify_draft(query: str, context: str, draft: str, llm) -> list[str]:
-    """Fact-check a draft against its cited sources. Empty = fully supported."""
-    try:
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", VERIFY_SYSTEM_PROMPT),
-                (
-                    "human",
-                    "Research question: {query}\n\nSources:\n{context}\n\nDraft:\n{draft}",
-                ),
-            ]
-        )
-        response = (prompt | llm).invoke(
-            {
-                "query": query[:500],
-                "context": context[:12000],
-                "draft": draft[:8000],
-            }
-        )
-        return _parse_list(response, 8, 200)
-    except Exception:
-        return []
+    """Legacy adapter: claim-level verification summarized as problem lines.
+
+    Kept for backward compatibility; new code should use verify_report().
+    """
+    report = verify_report(query, context, draft, llm)
+    return rewrite_feedback(report.results).splitlines() if report.results else []
 
 
 def search_many(queries: list[str], per_search: int = DEEP_PER_SEARCH) -> list:
@@ -285,30 +277,127 @@ def collect_round(
     return context, sources, fresh, seen_str
 
 
+def source_texts_for_verify(
+    context: str, sources: list[dict] | None = None
+) -> tuple[dict[int, str], dict[int, dict]]:
+    """Rebuild per-source evidence + metadata from merged context.
+
+    Parses the numbered [n] blocks built by merge_results() so the
+    verifier checks each claim against its *cited* source text.
+    Never raises: unparsable blocks yield empty evidence (which the
+    verifier treats as unsupported, never as supported).
+    """
+    texts: dict[int, str] = {}
+    meta: dict[int, dict] = {}
+    by_id = {s.get("id"): s for s in (sources or []) if isinstance(s, dict)}
+    current: int | None = None
+    buf: list[str] = []
+    for line in (context or "").splitlines():
+        head = __import__("re").match(r"^\[(\d+)\]\s+(.*)", line.strip())
+        if head:
+            if current is not None:
+                texts[current] = "\n".join(buf).strip()
+            current = int(head.group(1))
+            buf = [head.group(2)]
+        elif current is not None:
+            buf.append(line)
+    if current is not None:
+        texts[current] = "\n".join(buf).strip()
+    for sid, text in texts.items():
+        s = by_id.get(sid, {}) or {}
+        meta[sid] = {"url": s.get("url", ""), "title": s.get("title", "")}
+    return texts, meta
+
+
+def verify_report(
+    query: str, context: str, draft: str, llm, sources: list[dict] | None = None
+) -> VerificationReport:
+    """Claim-level verification: extract -> batch-verify -> report.
+
+    One LLM call for extraction, one for verification (batched over all
+    claims against already-retrieved text). No extra web searches.
+    Rule-based fallback keeps every claim checked when the model fails.
+    """
+    import logging as logging_lib
+
+    log = logging_lib.getLogger("verixa.verify")
+    claims = extract_claims(draft, llm)
+    texts, meta = source_texts_for_verify(context, sources)
+    failures = 0
+    try:
+        results = verify_claims_batch(claims, texts, meta, llm)
+    except Exception as exc:
+        log.warning("verify_report batch failed, rule fallback: %s", exc)
+        failures = 1
+        from backend.verify import rule_verify_claim as rule_each
+
+        results = [rule_each(c, texts, meta) for c in claims]
+    report = VerificationReport(claims=claims, results=results)
+    metrics = report.to_metrics()
+    metrics["verification_failures"] = failures
+    report.metrics = metrics
+    log.info(
+        "verify query=%.60s claims=%d supported=%d partial=%d unsupported=%d "
+        "contradicted=%d unclear=%d",
+        query,
+        metrics.get("claims_extracted", 0),
+        metrics.get("claims_supported", 0),
+        metrics.get("claims_partially_supported", 0),
+        metrics.get("claims_unsupported", 0),
+        metrics.get("claims_contradicted", 0),
+        metrics.get("claims_unclear", 0),
+    )
+    return report
+
+
 def synthesize_report(
     query: str,
     history_text: str,
     context: str,
     extra: str,
     llm,
-) -> str:
-    """Draft a deep report, fact-check it, and rewrite flagged claims once."""
+    sources: list[dict] | None = None,
+    on_progress=None,
+) -> tuple[str, dict]:
+    """Draft -> claim-verify -> targeted rewrite -> final verification.
+
+    Returns (final_answer, metrics). Only problematic claims are
+    rewritten; clean drafts publish after the first pass. A second
+    extract+verify pass gates publishing so the streamed answer is the
+    verified final text.
+    """
     draft = build_deep_answer_chain(extra).invoke(
         {"history": history_text, "query": query, "context": context}
     )
     text = draft.content if isinstance(draft.content, str) else ""
-    try:
-        problems = verify_draft(query, context, text, llm)
-    except Exception:
-        problems = []
-    if not problems:
-        return normalize_citations(text)
-    feedback = "\n- ".join(problems)
+    report = verify_report(query, context, text, llm, sources)
+    metrics = dict(report.to_metrics())
+    bad = [r for r in report.results if needs_rewrite(r)]
+    if not bad:
+        return normalize_citations(text), metrics
+    if on_progress is not None:
+        try:
+            on_progress(f"Rewriting {len(bad)} unsupported claims")
+        except Exception:
+            pass
+    feedback = rewrite_feedback(report.results)
+    metrics["claims_rewritten"] = len(bad)
     fixed = build_deep_answer_chain(extra, draft_feedback=feedback).invoke(
         {"history": history_text, "query": query, "context": context}
     )
     final = fixed.content if isinstance(fixed.content, str) else ""
-    return normalize_citations(final or text)
+    final_report = verify_report(query, context, final or text, llm, sources)
+    final_metrics = final_report.to_metrics()
+    final_metrics["claims_rewritten"] = len(bad)
+    # Publish the rewrite only if it did not get worse; otherwise keep
+    # the draft so a bad rewrite can never replace a cleaner original.
+    if final_metrics.get("claims_unsupported", 0) + final_metrics.get(
+        "claims_contradicted", 0
+    ) <= metrics.get("claims_unsupported", 0) + metrics.get(
+        "claims_contradicted", 0
+    ):
+        return normalize_citations(final or text), final_metrics
+    return normalize_citations(text), metrics
 
 
 def deep_answer(
@@ -370,8 +459,21 @@ def deep_answer(
     if not sources:
         context, sources = merge_results(collected)
 
-    progress("Drafting, verifying, and writing the final report")
-    content = synthesize_report(query, history_text, context, extra, llm)
+    progress("Drafting the report")
+    content, verify_metrics = synthesize_report(
+        query, history_text, context, extra, llm, sources, progress
+    )
+    import logging as logging_lib
+
+    logging_lib.getLogger("verixa.verify").info(
+        "deep query=%.60s rounds plan=%d executed=%d retrieved=%d used=%d %s",
+        query,
+        len(plan),
+        len(seen_queries),
+        sum(len(getattr(r, "results", []) or []) for r in collected),
+        len(sources),
+        " ".join(f"{k}={v}" for k, v in sorted(verify_metrics.items())),
+    )
     maybe_learn_memories(user_id, query, content, llm, auto_learn)
     return {
         "answer": content,

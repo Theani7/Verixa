@@ -40,7 +40,8 @@ from backend.deep import (
     merge_results,
     reflect_gaps,
     run_research_round,
-    verify_draft,
+    synthesize_report,
+    verify_report,
 )
 from verixa.search import get_page_texts, web_search
 
@@ -166,20 +167,29 @@ async def event_stream(
                 {"history": history_text, "query": query, "context": context},
             ):
                 draft_text += text
-            # Verify-then-publish: fact-check the draft, stream only the
-            # verified final text so tokens never show unverified claims.
-            yield _frame({"type": "progress", "label": "Verifying claims"})
+            # Claim-level verify-then-publish: extract claims, batch-verify
+            # each against its cited source, rewrite only problematic
+            # claims, then re-verify. Draft tokens stay withheld; only the
+            # verified final text is streamed.
+            yield _frame({"type": "progress", "label": "Extracting claims"})
             try:
-                problems = await run_in_threadpool(
-                    verify_draft, query, context, draft_text, llm
+                report = await run_in_threadpool(
+                    verify_report, query, context, draft_text, llm, sources
                 )
             except Exception:
-                problems = []
+                report = None
+            from backend.verify import needs_rewrite as _needs
+            from backend.verify import rewrite_feedback as _fb
+
+            bad = [r for r in (report.results if report else []) if _needs(r)]
             full_text = draft_text
-            if problems:
-                feedback = "\n- ".join(problems)
+            if bad:
+                feedback = _fb(report.results)
                 yield _frame(
-                    {"type": "progress", "label": "Rewriting unsupported claims"}
+                    {
+                        "type": "progress",
+                        "label": f"Rewriting {len(bad)} unsupported claims",
+                    }
                 )
                 chain = build_deep_answer_chain(extra, draft_feedback=feedback)
                 full_text = ""
@@ -188,6 +198,20 @@ async def event_stream(
                     {"history": history_text, "query": query, "context": context},
                 ):
                     full_text += text
+                yield _frame({"type": "progress", "label": "Final verification"})
+                try:
+                    final_report = await run_in_threadpool(
+                        verify_report, query, context, full_text, llm, sources
+                    )
+                except Exception:
+                    final_report = None
+                if final_report is not None:
+                    f_bad = sum(
+                        1 for r in final_report.results if _needs(r)
+                    )
+                    # Keep the rewrite only if it did not get worse.
+                    if f_bad > len(bad):
+                        full_text = draft_text
             full_text = normalize_citations(full_text)
             for chunk in [full_text[i : i + 1200] for i in range(0, len(full_text), 1200)]:
                 yield _frame({"type": "token", "text": chunk})
