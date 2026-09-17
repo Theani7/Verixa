@@ -2,6 +2,7 @@
 
 import re
 import time
+import uuid
 
 from backend.db import session_scope
 from backend.models import Thread
@@ -61,22 +62,31 @@ def clean_turns(turns) -> list[dict] | None:
     return clean
 
 
-def save_thread(thread_id: str, title: str, turns: list[dict]) -> None:
+def save_thread(
+    thread_id: str, title: str, turns: list[dict], user_id: uuid.UUID | None = None
+) -> str:
+    """Upsert a thread. Returns "forbidden" when owned by someone else."""
     with session_scope() as session:
         row = session.get(Thread, thread_id)
         if row is None:
             session.add(
                 Thread(
                     id=thread_id,
+                    user_id=user_id,
                     title=title[:200],
                     turns=turns,
                     updated_at=time.time(),
                 )
             )
-        else:
-            row.title = title[:200]
-            row.turns = turns
-            row.updated_at = time.time()
+            return "ok"
+        if row.user_id is not None and row.user_id != user_id:
+            return "forbidden"
+        row.title = title[:200]
+        row.turns = turns
+        row.updated_at = time.time()
+        if row.user_id is None:
+            row.user_id = user_id
+        return "ok"
 
 
 def get_thread(thread_id: str) -> dict | None:
@@ -92,8 +102,13 @@ def get_thread(thread_id: str) -> dict | None:
         }
 
 
-def delete_thread(thread_id: str) -> None:
+def delete_thread(thread_id: str, user_id: uuid.UUID | None = None) -> str:
+    """Delete a thread. Returns "forbidden" when owned by someone else."""
     with session_scope() as session:
         row = session.get(Thread, thread_id)
-        if row is not None:
-            session.delete(row)
+        if row is None:
+            return "ok"
+        if row.user_id is not None and row.user_id != user_id:
+            return "forbidden"
+        session.delete(row)
+        return "ok"
