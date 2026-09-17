@@ -49,11 +49,12 @@ CHAT_SYSTEM_PROMPT = (
 
 ROUTE_SYSTEM_PROMPT = (
     "Classify the user's message. Reply with exactly one word. Reply SEARCH "
-    "when answering needs live web search, fresh information, or external "
-    "facts beyond the conversation. Reply CHAT for greetings, thanks, "
-    "goodbyes, small talk, creative writing, opinions, math, explanations "
-    "of general knowledge, and follow-ups answerable from the conversation "
-    "alone."
+    "when the message asks about a specific person, place, event, "
+    "organization, statistic, news, or any external fact that should be "
+    "verified against the live web. Reply CHAT for greetings, thanks, "
+    "goodbyes, small talk, creative writing, opinions, math, "
+    "general-knowledge explanations, and follow-ups answerable from the "
+    "conversation alone."
 )
 
 SMALLTALK_RE = re.compile(
@@ -237,22 +238,58 @@ def extract_memories(query: str, answer: str, llm) -> list[str]:
         response = (prompt | llm).invoke(
             {"query": query[:1000], "answer": answer[:3000]}
         )
-        content = response.content if isinstance(response.content, str) else ""
-        text = content.strip()
-        if text.startswith("```"):
-            text = text.strip("`").strip()
-            if "\n" in text:
-                text = text.split("\n", 1)[1]
-        import json as json_lib
+        return _parse_str_list(response, max_items=3, max_len=200)
+    except Exception:
+        return []
 
+
+def _parse_str_list(response, max_items: int, max_len: int) -> list[str]:
+    """Best-effort JSON string-array extraction from an LLM response."""
+    import json as json_lib
+
+    content = response.content if isinstance(response.content, str) else ""
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if "\n" in text:
+            text = text.split("\n", 1)[1]
+    try:
         parsed = json_lib.loads(text)
-        if not isinstance(parsed, list):
-            return []
-        out: list[str] = []
-        for item in parsed[:3]:
-            if isinstance(item, str) and item.strip():
-                out.append(item.strip()[:200])
-        return out
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[str] = []
+    for item in parsed[:max_items]:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip()[:max_len])
+    return out
+
+
+RELATED_SYSTEM_PROMPT = (
+    "Suggest follow-up questions a curious reader would ask next about this "
+    "topic. Return a JSON array of 3 short strings, max 12 words each. "
+    "Do not repeat the asked question. Return ONLY the JSON array."
+)
+
+
+def related_questions(query: str, answer: str, llm) -> list[str]:
+    """Three related follow-ups for an answer. Never raises."""
+    try:
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", RELATED_SYSTEM_PROMPT),
+                (
+                    "human",
+                    "Asked: {query}\nAnswered: {answer}",
+                ),
+            ]
+        )
+        response = (prompt | llm).invoke(
+            {"query": query[:500], "answer": answer[:2000]}
+        )
+        out = _parse_str_list(response, max_items=3, max_len=140)
+        return [q for q in out if q.lower() != query[:500].lower()]
     except Exception:
         return []
 
@@ -375,7 +412,13 @@ def answer_query(
         )
         content = response.content if isinstance(response.content, str) else ""
         maybe_learn_memories(user_id, query, content, llm, auto_learn)
-        return {"answer": content, "sources": [], "query": query, "mode": "chat"}
+        return {
+            "answer": content,
+            "sources": [],
+            "query": query,
+            "mode": "chat",
+            "related": related_questions(query, content, llm),
+        }
 
     standalone = rewrite_query(query, history, llm)
     result = web_search(standalone, num_results=count)
@@ -396,4 +439,5 @@ def answer_query(
         "sources": sources,
         "query": standalone,
         "mode": "search",
+        "related": related_questions(query, content, llm),
     }

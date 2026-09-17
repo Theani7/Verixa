@@ -24,6 +24,7 @@ from backend.chain import (
     get_llm,
     load_memory_context,
     maybe_learn_memories,
+    related_questions,
     rewrite_query,
     route_message,
 )
@@ -91,6 +92,11 @@ async def event_stream(
         await run_in_threadpool(
             maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
         )
+        related = await run_in_threadpool(
+            related_questions, query, full_text, get_llm()
+        )
+        if related:
+            yield _frame({"type": "related", "questions": related})
         return
 
     yield _status("searching")
@@ -130,3 +136,8 @@ async def event_stream(
     await run_in_threadpool(
         maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
     )
+    related = await run_in_threadpool(
+        related_questions, query, full_text, get_llm()
+    )
+    if related:
+        yield _frame({"type": "related", "questions": related})
