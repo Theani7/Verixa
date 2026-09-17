@@ -388,8 +388,7 @@
   margin-bottom: 8px;
 }
 
-.answer-label,
-.sources-label {
+.answer-label {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -516,6 +515,54 @@
 }
 
 /* Sources */
+
+.sources-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.sources-toggle:hover {
+  border-color: var(--accent);
+}
+
+.sources-toggle:active {
+  transform: scale(0.98);
+}
+
+.sources-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+}
+
+.sources-caret {
+  transition: transform var(--dur-base) var(--ease);
+}
+
+.sources-caret.open {
+  transform: rotate(180deg);
+}
 
 .sources-list {
   list-style: none;

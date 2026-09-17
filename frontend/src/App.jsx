@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   ArrowClockwise,
   ArrowRight,
+  CaretDown,
   Check,
   Copy,
   List,
@@ -176,6 +177,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -197,6 +199,7 @@ function App() {
     setSources([])
     setAsked(q)
     setCopied(false)
+    setSourcesOpen(false)
     try {
       const res = await fetch(`${API_URL}/api/ask`, {
         method: 'POST',
@@ -243,6 +246,7 @@ function App() {
     setSources(t.sources)
     setError('')
     setCopied(false)
+    setSourcesOpen(false)
     setSidebarOpen(false)
   }
 
@@ -259,6 +263,7 @@ function App() {
     setSources([])
     setError('')
     setCopied(false)
+    setSourcesOpen(false)
     setSidebarOpen(false)
   }
 
@@ -435,42 +440,58 @@ function App() {
 
                   {sources.length > 0 && (
                     <section className="rise rise-1" aria-label="Sources">
-                      <p className="sources-label">Sources</p>
-                      <ol className="sources-list">
-                        {sources.map((s) => (
-                          <li
-                            key={s.id ?? s.url}
-                            id={`source-${s.id}`}
-                            className="source-card"
-                          >
-                            <span className="source-num">{s.id}</span>
-                            <div className="source-meta">
-                              <a
-                                className="source-link"
-                                href={s.url}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {s.title}
-                              </a>
-                              {s.excerpt && (
-                                <p className="source-excerpt">{s.excerpt}</p>
-                              )}
-                              <span className="source-host">
-                                <img
-                                  src={`https://www.google.com/s2/favicons?domain=${hostnameOf(s.url)}&sz=64`}
-                                  alt=""
-                                  loading="lazy"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none'
-                                  }}
-                                />
-                                {hostnameOf(s.url)}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ol>
+                      <button
+                        type="button"
+                        className="sources-toggle"
+                        onClick={() => setSourcesOpen((v) => !v)}
+                        aria-expanded={sourcesOpen}
+                        aria-controls="sources-list"
+                      >
+                        <span className="sources-count">{sources.length}</span>
+                        Sources
+                        <CaretDown
+                          size={16}
+                          weight="bold"
+                          className={`sources-caret${sourcesOpen ? ' open' : ''}`}
+                        />
+                      </button>
+                      {sourcesOpen && (
+                        <ol className="sources-list" id="sources-list">
+                          {sources.map((s) => (
+                            <li
+                              key={s.id ?? s.url}
+                              id={`source-${s.id}`}
+                              className="source-card"
+                            >
+                              <span className="source-num">{s.id}</span>
+                              <div className="source-meta">
+                                <a
+                                  className="source-link"
+                                  href={s.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {s.title}
+                                </a>
+                                {s.excerpt && (
+                                  <p className="source-excerpt">{s.excerpt}</p>
+                                )}
+                                <span className="source-host">
+                                  <img
+                                    src={`https://www.google.com/s2/favicons?domain=${hostnameOf(s.url)}&sz=64`}
+                                    alt=""
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none'
+                                    }}
+                                  />
+                                  {hostnameOf(s.url)}
+                                </span>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
                     </section>
                   )}
 
