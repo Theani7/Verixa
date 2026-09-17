@@ -14,6 +14,7 @@ import {
   Newspaper,
   PencilLine,
   Plus,
+  ShareNetwork,
   Sparkle,
   SpinnerGap,
   Trash,
@@ -21,8 +22,11 @@ import {
   WarningCircle,
 } from '@phosphor-icons/react'
 import './App.css'
+import { API_URL, deleteSharedThread, syncThread } from './api'
+import { SourceList } from './article'
+import { renderRich } from './markdown'
+import type { Source, Thread, Turn } from './types'
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const STORAGE_KEY = 'verixa.threads.v1'
 const LEGACY_STORAGE_KEY = 'seekora.threads.v1'
 const MAX_THREADS = 30
@@ -33,26 +37,6 @@ const SUGGESTIONS: string[] = [
   'What did the latest IPCC report say about methane emissions?',
 ]
 
-interface Source {
-  id: number
-  title: string
-  url: string
-  excerpt?: string
-}
-
-interface Turn {
-  query: string
-  answer: string
-  sources: Source[]
-}
-
-interface Thread {
-  id: string
-  title: string
-  turns: Turn[]
-  ts: number
-}
-
 type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'done'
 
 type StreamEvent =
@@ -62,14 +46,6 @@ type StreamEvent =
   | { type: 'token'; text: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
-}
 
 /* Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】) become
    [n] chips. The second pass drops a marker split across stream chunks. */
@@ -160,93 +136,6 @@ function newId(): string {
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message
   return 'Something went wrong while asking.'
-}
-
-/* Inline Markdown: bold, code spans, and [n] citation chips. */
-function renderInline(text: string, keyPrefix: string, citePrefix = ''): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[\d+\])/)
-  return parts.map((part, i) => {
-    const key = `${keyPrefix}-${i}`
-    const bold = part.match(/^\*\*([^*]+)\*\*$/)
-    if (bold) return <strong key={key}>{bold[1]}</strong>
-    const code = part.match(/^`([^`]+)`$/)
-    if (code) return <code key={key}>{code[1]}</code>
-    const cite = part.match(/^\[(\d+)\]$/)
-    if (cite)
-      return (
-        <a key={key} className="cite" href={`#${citePrefix}source-${cite[1]}`}>
-          {cite[1]}
-        </a>
-      )
-    return <span key={key}>{part}</span>
-  })
-}
-
-/* Block Markdown: fences, headings, lists, paragraphs. Built as elements,
-   never injected HTML, so source text cannot break out. */
-function renderRich(text: string, citePrefix = ''): ReactNode[] {
-  const nodes: ReactNode[] = []
-  const fenceSplit = text.split(/```/)
-  let key = 0
-
-  fenceSplit.forEach((chunk, fi) => {
-    if (fi % 2 === 1) {
-      nodes.push(<pre key={`f-${key++}`}><code>{chunk.replace(/^\w+\n/, '')}</code></pre>)
-      return
-    }
-    const lines = chunk.split('\n')
-    let list: { ordered: boolean; items: string[] } | null = null
-
-    function flushList(): void {
-      if (!list) return
-      const Tag = list.ordered ? 'ol' : 'ul'
-      const items = list.items
-      const listKey = key++
-      nodes.push(
-        <Tag key={`l-${listKey}`}>
-          {items.map((item, ii) => (
-            <li key={ii}>{renderInline(item, `l-${listKey}-i${ii}`, citePrefix)}</li>
-          ))}
-        </Tag>,
-      )
-      list = null
-    }
-
-    for (const line of lines) {
-      const h3 = line.match(/^###\s+(.*)/)
-      const h2 = line.match(/^##\s+(.*)/)
-      const ul = line.match(/^[-*]\s+(.*)/)
-      const ol = line.match(/^\d+[.)]\s+(.*)/)
-      if (h3 || h2) {
-        flushList()
-        const Tag = h3 ? 'h3' : 'h4'
-        const content = (h3 ?? h2)?.[1] ?? ''
-        const headKey = key++
-        nodes.push(
-          <Tag key={`h-${headKey}`}>{renderInline(content, `h-${headKey}`, citePrefix)}</Tag>,
-        )
-      } else if (ul || ol) {
-        const ordered = Boolean(ol)
-        const item = (ul ?? ol)?.[1] ?? ''
-        if (!list || list.ordered !== ordered) {
-          flushList()
-          list = { ordered, items: [] }
-        }
-        list.items.push(item)
-      } else if (line.trim() === '') {
-        flushList()
-      } else {
-        flushList()
-        const paraKey = key++
-        nodes.push(
-          <p key={`p-${paraKey}`}>{renderInline(line, `p-${paraKey}`, citePrefix)}</p>,
-        )
-      }
-    }
-    flushList()
-  })
-
-  return nodes
 }
 
 type StepId = 'searching' | 'reading' | 'writing'
@@ -350,47 +239,6 @@ function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: Com
   )
 }
 
-function SourceList({ prefix, sources }: { prefix: string; sources: Source[] }) {
-  return (
-    <ol className="sources-list" id={`${prefix}sources-list`}>
-      {sources.map((s, si) => (
-        <li
-          key={s.id ?? s.url}
-          id={`${prefix}source-${s.id}`}
-          className="source-card rise"
-          style={{ animationDelay: `${Math.min(si, 5) * 60}ms` }}
-        >
-          <span className="source-num">{s.id}</span>
-          <div className="source-meta">
-            <a
-              className="source-link"
-              href={s.url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {s.title}
-            </a>
-            {s.excerpt && (
-              <p className="source-excerpt">{s.excerpt}</p>
-            )}
-            <span className="source-host">
-              <img
-                src={`https://www.google.com/s2/favicons?domain=${hostnameOf(s.url)}&sz=64`}
-                alt=""
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-              {hostnameOf(s.url)}
-            </span>
-          </div>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
 function App() {
   const [threads, setThreads] = useState<Thread[]>(loadThreads)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -405,6 +253,7 @@ function App() {
   const [resolvedQuery, setResolvedQuery] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
+  const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   const loading =
     phase === 'searching' || phase === 'reading' || phase === 'writing'
@@ -420,13 +269,20 @@ function App() {
     return () => clearTimeout(t)
   }, [copiedKey])
 
+  useEffect(() => {
+    if (shareState === 'idle') return
+    const t = setTimeout(() => setShareState('idle'), 2500)
+    return () => clearTimeout(t)
+  }, [shareState])
   function persistTurn(turn: Turn): void {
-    setThreads((prev) => {
-      if (activeId) {
-        return prev.map((t) =>
-          t.id === activeId ? { ...t, turns: [...t.turns, turn], ts: Date.now() } : t,
-        )
-      }
+    if (activeId) {
+      const next = threads.map((t) =>
+        t.id === activeId ? { ...t, turns: [...t.turns, turn], ts: Date.now() } : t,
+      )
+      setThreads(next)
+      const updated = next.find((t) => t.id === activeId)
+      if (updated) syncThread(updated).catch(() => undefined)
+    } else {
       const thread: Thread = {
         id: newId(),
         title: turn.query.length > 60 ? `${turn.query.slice(0, 60)}...` : turn.query,
@@ -434,10 +290,10 @@ function App() {
         ts: Date.now(),
       }
       setActiveId(thread.id)
-      return [thread, ...prev]
-    })
+      setThreads((prev) => [thread, ...prev])
+      syncThread(thread).catch(() => undefined)
+    }
   }
-
   async function runAsk(text?: string): Promise<void> {
     const q = (text ?? query).trim()
     if (!q || loading) return
@@ -531,6 +387,7 @@ function App() {
 
   function deleteThread(id: string): void {
     setThreads((prev) => prev.filter((t) => t.id !== id))
+    deleteSharedThread(id).catch(() => undefined)
     if (id === activeId) reset()
   }
 
@@ -546,6 +403,7 @@ function App() {
     setOpenSources(null)
     setResolvedQuery('')
     setSidebarOpen(false)
+    setShareState('idle')
     setPhase('idle')
   }
 
@@ -560,6 +418,18 @@ function App() {
 
   function toggleSources(key: string): void {
     setOpenSources((prev) => (prev === key ? null : key))
+  }
+
+  async function shareThread(): Promise<void> {
+    const t = threads.find((x) => x.id === activeId)
+    if (!t) return
+    try {
+      await syncThread(t)
+      await navigator.clipboard.writeText(`${window.location.origin}/t/${t.id}`)
+      setShareState('copied')
+    } catch {
+      setShareState('failed')
+    }
   }
 
   const streaming = answer !== '' && phase !== 'done'
@@ -792,14 +662,28 @@ function App() {
               )}
 
               {phase === 'done' && turns.length > 0 && (
-                <button
-                  type="button"
-                  className="new-question rise rise-2"
-                  onClick={reset}
-                >
-                  <ArrowClockwise size={18} />
-                  New question
-                </button>
+                <div className="thread-actions rise rise-2">
+                  <button
+                    type="button"
+                    className="share-button"
+                    onClick={shareThread}
+                  >
+                    <ShareNetwork size={18} />
+                    {shareState === 'copied'
+                      ? 'Link copied'
+                      : shareState === 'failed'
+                        ? 'Sharing failed'
+                        : 'Share'}
+                  </button>
+                  <button
+                    type="button"
+                    className="new-question"
+                    onClick={reset}
+                  >
+                    <ArrowClockwise size={18} />
+                    New question
+                  </button>
+                </div>
               )}
 
               <div className="composer-dock">

@@ -58,6 +58,17 @@ API docs are served at http://localhost:8000/docs while the backend runs.
 | GET    | `/api/health`    | Health check                                 |
 | POST   | `/api/ask`       | Full JSON answer: `{ answer, sources }`      |
 | POST   | `/api/ask/stream`| SSE stream: `status`, `rewrite`, `sources`, `token`, `done`, `error` events |
+| PUT    | `/api/threads/{id}` | Save a thread for sharing (upsert, validated) |
+| GET    | `/api/threads/{id}` | Public read-only thread for share links       |
+| DELETE | `/api/threads/{id}` | Delete a shared thread                        |
+
+## Sharing
+
+Every finished turn auto-syncs to the backend's SQLite store
+(`verixa.db`, git-ignored). The Share button copies a public link of the
+form `http://localhost:5173/t/<id>` that renders the thread read-only,
+no login needed. Deleting a thread removes
+its shared copy too. Anyone with the link can read it, so share mindfully.
 
 ## Project layout
 
