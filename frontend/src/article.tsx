@@ -1,3 +1,4 @@
+import { ArrowUpRight } from '@phosphor-icons/react'
 import type { Source } from './types'
 import { hostnameOf } from './markdown'
 
@@ -19,7 +20,8 @@ export function SourceList({ prefix, sources }: { prefix: string; sources: Sourc
               target="_blank"
               rel="noreferrer"
             >
-              {s.title}
+              <span>{s.title}</span>
+              <ArrowUpRight size={14} className="source-link-icon" aria-hidden="true" />
             </a>
             {s.excerpt && (
               <p className="source-excerpt">{s.excerpt}</p>

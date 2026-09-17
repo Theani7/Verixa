@@ -1596,7 +1596,9 @@
 }
 
 .source-link {
-  display: block;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.45;
@@ -1604,8 +1606,22 @@
   text-decoration: none;
 }
 
+.source-link-icon {
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
 .source-link:hover {
   text-decoration: underline;
+}
+
+.source-link:hover .source-link-icon {
+  opacity: 1;
+  color: var(--accent);
+  transform: translate(1px, -1px);
 }
 
 .source-excerpt {
