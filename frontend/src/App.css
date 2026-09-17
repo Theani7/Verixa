@@ -619,6 +619,64 @@
   padding: 0;
 }
 
+.answer-body .md-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.answer-body blockquote {
+  margin: 0 0 12px;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid var(--accent);
+}
+
+.answer-body blockquote p {
+  margin: 0 0 6px;
+}
+
+.answer-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.md-hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.answer-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.answer-body th,
+.answer-body td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.answer-body th {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--bg-deep);
+}
+
+.answer-body tr:last-child td {
+  border-bottom: 0;
+}
+
 .cite {
   display: inline-flex;
   align-items: center;
