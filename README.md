@@ -47,6 +47,12 @@ FastAPI backend ----------------------> PostgreSQL
           +--> candidate memories
 ```
 
+## Architecture Overview
+
+![Verixa architecture diagram](assets/images/arcticture.png)
+
+The diagram summarizes how the React browser client, FastAPI backend, Exa search, Groq and LangChain synthesis, and PostgreSQL with pgvector storage interact.
+
 ### Request flow
 
 For a normal web-search request, Verixa:
@@ -146,6 +152,10 @@ docker rm verixa-postgres
 │   ├── models.py        # Users, threads, and vector-memory tables
 │   ├── streaming.py     # SSE event construction and streaming pipeline
 │   └── threads.py       # Shared-thread validation and ownership
+├── assets/
+│   └── images/
+│       ├── .gitkeep
+│       └── arcticture.png # Architecture overview diagram
 ├── verixa/
 │   └── search.py        # Exa `/search` client and command-line search tool
 ├── frontend/
