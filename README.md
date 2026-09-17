@@ -18,12 +18,12 @@ and streams it token by token into a dark, minimal React UI.
 
 - Backend: FastAPI, LangChain, `langchain-groq`, `exa-py`,
   SQLAlchemy, Postgres with pgvector
-- Frontend: React 19, Vite, Phosphor icons, native CSS (no UI framework)
+- Frontend: React 19, Vite, Bun, Phosphor icons, native CSS (no UI framework)
 
 ## Prerequisites
 
 - Python 3.12+
-- Node 20+
+- [Bun](https://bun.sh) 1.2+ (frontend runtime and package manager)
 - Postgres 16+ with pgvector (local Homebrew install works:
   `brew install postgresql@18 pgvector`, then create the `verixa`
   database and role)
@@ -50,7 +50,7 @@ source .venv/bin/activate
 uvicorn backend.main:app --reload --port 8000
 
 # Frontend (http://localhost:5173) — new terminal
-cd frontend && npm install && npm run dev
+cd frontend && bun install && bun run dev
 ```
 
 API docs are served at http://localhost:8000/docs while the backend runs.

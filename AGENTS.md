@@ -7,3 +7,4 @@
 ## Frontend
 - Always use TypeScript (`.ts`/`.tsx`), never plain JavaScript
 - Frontend builds typecheck via `tsc -b` before Vite bundles
+- Use Bun (not npm) for installs, scripts, and the dev server
