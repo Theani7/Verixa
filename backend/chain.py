@@ -38,6 +38,10 @@ SYSTEM_PROMPT = (
     "Answer the user's question using ONLY the provided web sources. "
     "Cite every factual claim inline ONLY as [1], [2] matching the source numbers. "
     "Never use any other citation format: no 【】 brackets, no footnotes. "
+    "Write authoritative, direct synthesis. Do NOT include meta-commentary, "
+    "editorial side notes, or parenthetical explanations about what sources state "
+    "(e.g., never write '*(The Wikipedia entry lists...)*' or 'According to source [1]'). "
+    "Let the inline citation chips [1] handle all source attribution. "
     "If the sources don't contain the answer, say so clearly."
 )
 
@@ -188,8 +192,9 @@ def build_answer_chain(system_extra: str = ""):
                 "human",
                 "Conversation so far (may be empty):\n{history}\n\n"
                 "Question: {query}\n\nWeb sources:\n{context}\n\n"
-                "Write a concise answer with inline citations. "
-                "Use Markdown (headings, bold, bullet lists) where it helps readability.",
+                "Write a concise, direct answer with inline citations. "
+                "Use Markdown (headings, bold, bullet lists) where it helps readability. "
+                "Do not include conversational filler, meta-commentary, or parenthetical source notes.",
             ),
         ]
     )
