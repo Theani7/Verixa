@@ -1,24 +1,29 @@
-/* Seekora design tokens. Measured from the Perplexity design context.
-   Warm minimalism, light mode only. One accent (warm near-black). */
+/* Seekora dark product tokens. Warm charcoal base, one teal accent.
+   Dark-only by design, matching the Perplexity product aesthetic. */
 
 :root {
-  --bg: #fcfcf9;
-  --surface: #fdfbfa;
-  --ink: #27251e;
-  --text: #000000;
-  --muted: rgba(39, 37, 30, 0.64);
-  --border: rgba(39, 37, 30, 0.14);
-  --accent: #27251e;
+  --bg: #191a1a;
+  --bg-deep: #131414;
+  --surface: #212323;
+  --surface-2: #282b2b;
+  --ink: #f2f1ec;
+  --text: #e8e7e1;
+  --muted: rgba(232, 231, 225, 0.6);
+  --faint: rgba(232, 231, 225, 0.38);
+  --border: rgba(255, 255, 255, 0.09);
+  --accent: #20808d;
+  --accent-hover: #1b6e79;
   --on-accent: #ffffff;
-  --danger: #b3261e;
+  --focus: #7cc7d1;
+  --danger: #f28b82;
 
   --r-sm: 6px;
   --r-md: 12px;
   --r-lg: 16px;
   --r-pill: 9999px;
 
-  --shadow-card: rgba(0, 0, 0, 0.08) 0px 1px 2px 0px;
-  --shadow-elevated: rgba(0, 0, 0, 0.08) 0px 1px 2px 0px;
+  --shadow-card: rgba(0, 0, 0, 0.32) 0px 1px 2px 0px;
+  --shadow-elevated: rgba(0, 0, 0, 0.45) 0px 8px 24px 0px;
 
   --dur-fast: 75ms;
   --dur-base: 300ms;
@@ -27,8 +32,9 @@
   --sans: "pplxSans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
 
-  color-scheme: light;
+  color-scheme: dark;
   font-family: var(--sans);
   font-size: 16px;
   line-height: 1.5;
@@ -61,6 +67,7 @@ a {
 
 button {
   font: inherit;
+  color: inherit;
   cursor: pointer;
 }
 
@@ -69,7 +76,7 @@ button:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -83,6 +90,10 @@ button:disabled {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+::selection {
+  background: rgba(32, 128, 141, 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
