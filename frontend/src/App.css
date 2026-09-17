@@ -1093,6 +1093,29 @@
   background: var(--surface-2);
 }
 
+.signout-confirm {
+  padding: 4px 10px 8px;
+}
+
+.signout-confirm p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.signout-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.signout-actions .settings-button {
+  flex: 1;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
 .sign-in {
   width: 100%;
   min-height: 44px;

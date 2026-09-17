@@ -323,6 +323,7 @@ function App() {
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileMenu, setProfileMenu] = useState(false)
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
   const [profile, setProfile] = useState<Profile>(loadProfile)
 
@@ -573,11 +574,16 @@ function App() {
   useEffect(() => {
     if (!profileMenu) return
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') setProfileMenu(false)
+      if (e.key === 'Escape') closeProfileMenu()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [profileMenu])
+
+  function closeProfileMenu(): void {
+    setProfileMenu(false)
+    setConfirmingSignOut(false)
+  }
 
   function reset(): void {
     setActiveId(null)
@@ -754,36 +760,60 @@ function App() {
                     type="button"
                     className="menu-backdrop"
                     aria-label="Close account menu"
-                    onClick={() => setProfileMenu(false)}
+                    onClick={() => closeProfileMenu()}
                   />
                   <div className="profile-menu" role="menu" aria-label="Account">
                     <p className="profile-email" title={session.email}>
                       {session.email}
                     </p>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="profile-item"
-                      onClick={() => {
-                        setProfileMenu(false)
-                        setSettingsOpen(true)
-                      }}
-                    >
-                      <GearSix size={16} />
-                      Settings
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="profile-item"
-                      onClick={() => {
-                        setProfileMenu(false)
-                        signOut()
-                      }}
-                    >
-                      <SignOut size={16} />
-                      Sign out
-                    </button>
+                    {!confirmingSignOut ? (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="profile-item"
+                          onClick={() => {
+                            closeProfileMenu()
+                            setSettingsOpen(true)
+                          }}
+                        >
+                          <GearSix size={16} />
+                          Settings
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="profile-item"
+                          onClick={() => setConfirmingSignOut(true)}
+                        >
+                          <SignOut size={16} />
+                          Sign out
+                        </button>
+                      </>
+                    ) : (
+                      <div className="signout-confirm">
+                        <p>Sign out of {session.email}?</p>
+                        <div className="signout-actions">
+                          <button
+                            type="button"
+                            className="settings-button ghost"
+                            onClick={() => setConfirmingSignOut(false)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="settings-button"
+                            onClick={() => {
+                              closeProfileMenu()
+                              signOut()
+                            }}
+                          >
+                            Sign out
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
