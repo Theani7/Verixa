@@ -1427,6 +1427,7 @@
   background: linear-gradient(180deg, transparent 0%, rgba(20, 21, 21, 0.8) 28%, var(--bg) 75%);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  will-change: transform;
 }
 
 .rise {

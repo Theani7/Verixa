@@ -769,7 +769,7 @@ function App() {
     if (asked !== '') {
       threadBottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
-  }, [asked, phase])
+  }, [asked])
 
   useEffect(() => {
     function onGlobalKey(e: KeyboardEvent): void {
