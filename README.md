@@ -49,7 +49,7 @@ FastAPI backend ----------------------> PostgreSQL
 
 ## Architecture Overview
 
-![Verixa architecture diagram](assets/images/arcticture.png)
+![Verixa architecture diagram](assets/images/architecture.png)
 
 The diagram summarizes how the React browser client, FastAPI backend, Exa search, Groq and LangChain synthesis, and PostgreSQL with pgvector storage interact.
 
@@ -155,7 +155,7 @@ docker rm verixa-postgres
 ├── assets/
 │   └── images/
 │       ├── .gitkeep
-│       └── arcticture.png # Architecture overview diagram
+│       └── architecture.png # Architecture overview diagram
 ├── verixa/
 │   └── search.py        # Exa `/search` client and command-line search tool
 ├── frontend/
