@@ -39,7 +39,8 @@ def build_context(result, max_results: int = 5) -> tuple[str, list[dict]]:
     blocks: list[str] = []
     sources: list[dict] = []
     for i, item in enumerate(result.results[:max_results], start=1):
-        sources.append({"id": i, "title": item.title, "url": item.url})
+        excerpt = (item.highlights or [""])[0][:220]
+        sources.append({"id": i, "title": item.title, "url": item.url, "excerpt": excerpt})
         highlights = "\n".join((item.highlights or [])[:2])
         blocks.append(f"[{i}] {item.title}\nURL: {item.url}\n{highlights[:1500]}")
     return "\n\n".join(blocks), sources
@@ -56,7 +57,8 @@ def answer_query(query: str) -> dict:
             (
                 "human",
                 "Question: {query}\n\nWeb sources:\n{context}\n\n"
-                "Write a concise answer with inline citations.",
+                "Write a concise answer with inline citations. "
+                "Use Markdown (headings, bold, bullet lists) where it helps readability.",
             ),
         ]
     )
