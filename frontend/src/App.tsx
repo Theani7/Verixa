@@ -5,7 +5,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   BookOpenText,
-  CaretDown,
   ChatCircleText,
   Check,
   Copy,
@@ -801,32 +800,6 @@ function App() {
     )
   }
 
-  function sourcesPill(key: string, list: Source[]): ReactNode {
-    const open = openSources === key
-    return (
-      <button
-        type="button"
-        className="sources-pill"
-        onClick={() => toggleSources(key)}
-        aria-expanded={open}
-        aria-controls={`${key}-sources-list`}
-      >
-        <span className="pill-label">Sources</span>
-        <span className="favicon-stack" aria-hidden="true">
-          {favicons(list).map((u) => (
-            <img key={u} src={faviconFor(u)} alt="" loading="lazy" onError={hideBroken} />
-          ))}
-        </span>
-        <span className="pill-count">{list.length}</span>
-        <CaretDown
-          size={16}
-          weight="bold"
-          className={`sources-caret${open ? ' open' : ''}`}
-        />
-      </button>
-    )
-  }
-
   function actionBar(
     key: string,
     text: string,
@@ -1177,15 +1150,12 @@ function App() {
                     <div className="bubble-row">
                       <h2 className="user-bubble">{turn.query}</h2>
                     </div>
-                    {turn.mode === 'search' && (
+                    {turn.mode === 'search' && turn.durationMs > 0 && (
                       <div className="turn-meta">
-                        {turn.durationMs > 0 && (
-                          <span className="researched">
-                            <Timer size={14} aria-hidden="true" />
-                            Researched {formatSecs(turn.durationMs)}
-                          </span>
-                        )}
-                        {turn.sources.length > 0 && sourcesPill(key, turn.sources)}
+                        <span className="researched">
+                          <Timer size={14} aria-hidden="true" />
+                          Researched {formatSecs(turn.durationMs)}
+                        </span>
                       </div>
                     )}
                     {turn.mode === 'search' &&
@@ -1239,7 +1209,6 @@ function App() {
                   {!loading && openSources === 'live' && (
                     <SourceList prefix="live-" sources={sources} />
                   )}
-                  {loading && sources.length > 0 && sourcesPill('live', sources)}
                 </>
               )}
 
