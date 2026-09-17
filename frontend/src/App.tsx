@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
   ArrowBendDownRight,
@@ -594,66 +594,82 @@ function Composer({
   )
 }
 
-function SourcesPreview({
+function ChatSourcesModal({
   sources,
-  open,
-  onToggle,
+  onClose,
 }: {
   sources: Source[]
-  open: boolean
-  onToggle: () => void
+  onClose: () => void
 }) {
-  if (sources.length === 0) return null
-  const visible = sources.slice(0, 4)
-  const extra = sources.length - 4
+  const [filter, setFilter] = useState('')
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const filtered = sources.filter(
+    (s) =>
+      s.title.toLowerCase().includes(filter.toLowerCase()) ||
+      s.url.toLowerCase().includes(filter.toLowerCase()) ||
+      (s.excerpt && s.excerpt.toLowerCase().includes(filter.toLowerCase())),
+  )
 
   return (
-    <section className="sources-preview rise" aria-label="Web sources">
-      <div className="sources-preview-head">
-        <div className="sources-preview-title">
-          <GlobeHemisphereWest size={15} aria-hidden="true" />
-          <span>Sources</span>
-          <span className="sources-badge">{sources.length}</span>
-        </div>
-        {extra > 0 && (
+    <div
+      className="modal-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        className="modal chat-sources-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-sources-title"
+      >
+        <div className="modal-head">
+          <div className="chat-sources-header-left">
+            <h2 id="chat-sources-title" className="modal-title">
+              Sources in this chat
+            </h2>
+            <span className="sources-badge">{sources.length}</span>
+          </div>
           <button
             type="button"
-            className="sources-toggle-btn"
-            onClick={onToggle}
-            aria-expanded={open}
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close sources dialog"
           >
-            {open ? 'Hide details' : `+${extra} more`}
+            <X size={18} />
           </button>
+        </div>
+
+        {sources.length > 3 && (
+          <div className="chat-sources-search">
+            <MagnifyingGlass size={15} aria-hidden="true" />
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter chat sources..."
+              autoFocus
+            />
+          </div>
         )}
+
+        <div className="chat-sources-content">
+          {filtered.length > 0 ? (
+            <SourceList prefix="chat-modal-" sources={filtered} />
+          ) : (
+            <p className="thread-empty">No sources match &ldquo;{filter}&rdquo;</p>
+          )}
+        </div>
       </div>
-      <div className="sources-chips-grid">
-        {visible.map((s) => (
-          <a
-            key={s.id ?? s.url}
-            href={s.url}
-            target="_blank"
-            rel="noreferrer"
-            className="source-chip"
-            title={s.title}
-          >
-            <div className="source-chip-top">
-              <img
-                src={faviconFor(s.url)}
-                alt=""
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-                className="source-chip-favicon"
-              />
-              <span className="source-chip-host">{hostnameOf(s.url)}</span>
-              <span className="source-chip-num">{s.id}</span>
-            </div>
-            <div className="source-chip-title">{s.title}</div>
-          </a>
-        ))}
-      </div>
-    </section>
+    </div>
   )
 }
 
@@ -726,6 +742,20 @@ function App() {
   const [profile, setProfile] = useState<Profile>(loadProfile)
   const [askMode, setAskMode] = useState<AskMode>(loadAskMode)
   const [steps, setSteps] = useState<string[]>([])
+  const [chatSourcesOpen, setChatSourcesOpen] = useState(false)
+
+  const activeThread = threads.find((x) => x.id === activeId)
+  const chatSources = useMemo(() => {
+    const combined = [...turns.flatMap((t) => t.sources), ...sources]
+    const map = new Map<string, Source>()
+    for (const s of combined) {
+      const k = s.url || String(s.id)
+      if (!map.has(k)) {
+        map.set(k, s)
+      }
+    }
+    return Array.from(map.values())
+  }, [turns, sources])
 
   const loading =
     phase === 'searching' ||
@@ -1322,6 +1352,7 @@ function App() {
   const visibleCount = groups.reduce((n, g) => n + g.items.length, 0)
 
   function renderThreadItem(t: Thread): ReactNode {
+    const sourceCount = t.turns.reduce((acc, turn) => acc + turn.sources.length, 0)
     return (
       <li
         key={t.id}
@@ -1339,6 +1370,15 @@ function App() {
         >
           {t.title}
         </button>
+        {sourceCount > 0 && (
+          <span
+            className="thread-source-badge"
+            title={`${sourceCount} sources in this chat`}
+            aria-label={`${sourceCount} sources`}
+          >
+            {sourceCount}
+          </span>
+        )}
         <button
           type="button"
           className="thread-delete"
@@ -1558,16 +1598,29 @@ function App() {
       <div className="content">
         <div className="shell">
           <header className="topbar">
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setSidebarOpen((v) => !v)}
-              aria-expanded={sidebarOpen}
-              aria-label="Toggle threads panel"
-            >
-              <List size={20} />
-            </button>
-            <span className="brand">Verixa</span>
+            <div className="topbar-left">
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setSidebarOpen((v) => !v)}
+                aria-expanded={sidebarOpen}
+                aria-label="Toggle threads panel"
+              >
+                <List size={20} />
+              </button>
+              <span className="brand">Verixa</span>
+            </div>
+            {inThread && chatSources.length > 0 && (
+              <button
+                type="button"
+                className="chat-sources-pill"
+                onClick={() => setChatSourcesOpen(true)}
+                title="View all sources in this chat"
+              >
+                <GlobeHemisphereWest size={14} aria-hidden="true" />
+                <span>{chatSources.length} sources</span>
+              </button>
+            )}
           </header>
 
           {!inThread && (
@@ -1622,6 +1675,25 @@ function App() {
               aria-busy={loading}
               className="thread"
             >
+              <div className="thread-header-bar rise">
+                <div className="thread-header-info">
+                  <span className="thread-header-title">
+                    {activeThread?.title ?? (turns[0]?.query || asked)}
+                  </span>
+                </div>
+                {chatSources.length > 0 && (
+                  <button
+                    type="button"
+                    className="chat-sources-pill"
+                    onClick={() => setChatSourcesOpen(true)}
+                    title="View all sources cited in this chat"
+                  >
+                    <GlobeHemisphereWest size={14} aria-hidden="true" />
+                    <span>{chatSources.length} sources in chat</span>
+                  </button>
+                )}
+              </div>
+
               {turns.map((turn, ti) => {
                 const key = `t${ti}`
                 return (
@@ -1631,20 +1703,6 @@ function App() {
                     </div>
 
                     <div className="assistant-turn">
-                      {turn.sources.length > 0 && (
-                        <SourcesPreview
-                          sources={turn.sources}
-                          open={openSources === key}
-                          onToggle={() => toggleSources(key)}
-                        />
-                      )}
-
-                      {openSources === key && (
-                        <div className="sources-drawer rise">
-                          <SourceList prefix={`${key}-`} sources={turn.sources} />
-                        </div>
-                      )}
-
                       <AnswerHeader
                         mode={turn.mode}
                         durationMs={turn.durationMs}
@@ -1656,6 +1714,27 @@ function App() {
                       {answerBody(key, turn.answer, false, turn.sources)}
 
                       {actionBar(key, turn.answer, turn.sources, key)}
+
+                      {openSources === key && turn.sources.length > 0 && (
+                        <div className="sources-drawer rise">
+                          <div className="sources-drawer-head">
+                            <span className="sources-drawer-title">
+                              <GlobeHemisphereWest size={15} aria-hidden="true" />
+                              <span>Sources ({turn.sources.length})</span>
+                            </span>
+                            <button
+                              type="button"
+                              className="sources-drawer-close"
+                              onClick={() => toggleSources(key)}
+                              aria-label="Close sources drawer"
+                              title="Close"
+                            >
+                              <X size={15} />
+                            </button>
+                          </div>
+                          <SourceList prefix={`${key}-`} sources={turn.sources} />
+                        </div>
+                      )}
 
                       {relatedSection(turn.related)}
                     </div>
@@ -1670,20 +1749,6 @@ function App() {
                   </div>
 
                   <div className="assistant-turn">
-                    {sources.length > 0 && (
-                      <SourcesPreview
-                        sources={sources}
-                        open={openSources === 'live'}
-                        onToggle={() => toggleSources('live')}
-                      />
-                    )}
-
-                    {openSources === 'live' && (
-                      <div className="sources-drawer rise">
-                        <SourceList prefix="live-" sources={sources} />
-                      </div>
-                    )}
-
                     {loading && (
                       <StatusSteps
                         phase={phase}
@@ -1724,6 +1789,28 @@ function App() {
                     {!loading &&
                       answer !== '' &&
                       actionBar('live', displayAnswer, sources, 'live')}
+
+                    {openSources === 'live' && sources.length > 0 && (
+                      <div className="sources-drawer rise">
+                        <div className="sources-drawer-head">
+                          <span className="sources-drawer-title">
+                            <GlobeHemisphereWest size={15} aria-hidden="true" />
+                            <span>Sources ({sources.length})</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="sources-drawer-close"
+                            onClick={() => toggleSources('live')}
+                            aria-label="Close sources drawer"
+                            title="Close"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                        <SourceList prefix="live-" sources={sources} />
+                      </div>
+                    )}
+
                     {!loading && relatedSection(related)}
                   </div>
                 </div>
@@ -1778,6 +1865,13 @@ function App() {
             setSettingsOpen(false)
             setAuthModal('signin')
           }}
+        />
+      )}
+
+      {chatSourcesOpen && (
+        <ChatSourcesModal
+          sources={chatSources}
+          onClose={() => setChatSourcesOpen(false)}
         />
       )}
     </div>
