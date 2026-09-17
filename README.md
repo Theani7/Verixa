@@ -11,6 +11,7 @@ and streams it token by token into a dark, minimal React UI.
 - Token streaming over SSE with search progress steps
   (searching, reading sources, writing)
 - Numbered citation chips linked to collapsible source cards
+- Related follow-up questions generated per answer, one click to ask
 - Thread sidebar with history persisted in the browser
 - Markdown answers, copy button, follow-up composer docked at the bottom
 

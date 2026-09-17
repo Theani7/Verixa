@@ -12,6 +12,7 @@ export interface Turn {
   mode: 'search' | 'chat'
   searchedQuery: string
   durationMs: number
+  related: string[]
 }
 
 export interface Thread {

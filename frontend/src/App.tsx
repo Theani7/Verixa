@@ -100,6 +100,7 @@ type StreamEvent =
   | { type: 'status'; phase: Phase }
   | { type: 'mode'; mode: Turn['mode'] }
   | { type: 'rewrite'; query: string }
+  | { type: 'related'; questions: string[] }
   | { type: 'sources'; sources: Source[] }
   | { type: 'token'; text: string }
   | { type: 'done' }
@@ -139,6 +140,9 @@ function normalizeThread(value: unknown): Thread | null {
           mode: x.mode === 'chat' ? ('chat' as const) : ('search' as const),
           searchedQuery: typeof x.searchedQuery === 'string' ? x.searchedQuery : '',
           durationMs: typeof x.durationMs === 'number' ? x.durationMs : 0,
+          related: Array.isArray(x.related)
+            ? x.related.filter((r): r is string => typeof r === 'string').slice(0, 4)
+            : [],
         }
       })
       .filter((x) => x.query !== '')
@@ -163,6 +167,7 @@ function normalizeThread(value: unknown): Thread | null {
           mode: 'search',
           searchedQuery: '',
           durationMs: 0,
+          related: [],
         },
       ],
       ts: typeof t.ts === 'number' ? t.ts : Date.now(),
@@ -408,6 +413,7 @@ function App() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [openSources, setOpenSources] = useState<string | null>(null)
   const [resolvedQuery, setResolvedQuery] = useState('')
+  const [related, setRelated] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -524,6 +530,7 @@ function App() {
     mode: Turn['mode'],
     searchedQuery: string,
     durationMs: number,
+    relatedQs: string[],
   ): void {
     const turn: Turn = {
       query: q,
@@ -532,12 +539,14 @@ function App() {
       mode,
       searchedQuery,
       durationMs,
+      related: relatedQs,
     }
     setTurns((prev) => [...prev, turn])
     persistTurn(turn)
     setAsked('')
     setAnswer('')
     setSources([])
+    setRelated([])
     setPhase('done')
   }
 
@@ -553,12 +562,14 @@ function App() {
     setCopiedKey(null)
     setOpenSources(null)
     setResolvedQuery('')
+    setRelated([])
     const history = turns.slice(-4).map((t) => ({
       query: t.query,
       answer: t.answer.slice(0, 2000),
     }))
     let full = ''
     let seenSources: Source[] = []
+    let seenRelated: string[] = []
     let mode: Turn['mode'] = 'search'
     let standalone = q
     const started = Date.now()
@@ -583,6 +594,7 @@ function App() {
           sources?: unknown
           mode?: unknown
           query?: unknown
+          related?: unknown
         }
         full = normalizeCitations(typeof data.answer === 'string' ? data.answer : '')
         seenSources = Array.isArray(data.sources)
@@ -592,9 +604,15 @@ function App() {
         if (typeof data.query === 'string' && data.query.trim() !== '') {
           standalone = data.query
         }
+        if (Array.isArray(data.related)) {
+          seenRelated = data.related
+            .filter((r): r is string => typeof r === 'string')
+            .slice(0, 4)
+          setRelated(seenRelated)
+        }
         setAnswer(full)
         setSources(seenSources)
-        finishTurn(q, full, seenSources, mode, standalone, Date.now() - started)
+        finishTurn(q, full, seenSources, mode, standalone, Date.now() - started, seenRelated)
         return
       }
       const res = await fetch(`${API_URL}/api/ask/stream`, {
@@ -631,8 +649,21 @@ function App() {
             } else if (e.type === 'token') {
               full += e.text
               setAnswer(full)
+            } else if (e.type === 'related') {
+              seenRelated = (e.questions ?? [])
+                .filter((r): r is string => typeof r === 'string')
+                .slice(0, 4)
+              setRelated(seenRelated)
             } else if (e.type === 'done') {
-              finishTurn(q, full, seenSources, mode, standalone, Date.now() - started)
+              finishTurn(
+                q,
+                full,
+                seenSources,
+                mode,
+                standalone,
+                Date.now() - started,
+                seenRelated,
+              )
             } else if (e.type === 'error') {
               throw new Error(e.message)
             }
@@ -658,6 +689,7 @@ function App() {
     setCopiedKey(null)
     setOpenSources(null)
     setResolvedQuery('')
+    setRelated([])
     setSidebarOpen(false)
     setPhase('done')
   }
@@ -728,6 +760,7 @@ function App() {
     setCopiedKey(null)
     setOpenSources(null)
     setResolvedQuery('')
+    setRelated([])
     setSidebarOpen(false)
     setShareState('idle')
     setPhase('idle')
@@ -891,6 +924,29 @@ function App() {
         <GlobeHemisphereWest size={15} aria-hidden="true" />
         Searching for {searched}
       </p>
+    )
+  }
+
+  function relatedSection(questions: string[]): ReactNode {
+    if (questions.length === 0) return null
+    return (
+      <section className="related rise" aria-label="Related questions">
+        <p className="related-label">Related</p>
+        <ul className="related-list">
+          {questions.map((rq) => (
+            <li key={rq}>
+              <button
+                type="button"
+                className="related-item"
+                onClick={() => runAsk(rq)}
+              >
+                <span className="related-text">{rq}</span>
+                <Plus size={16} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
     )
   }
 
@@ -1192,6 +1248,7 @@ function App() {
                     {openSources === key && (
                       <SourceList prefix={`${key}-`} sources={turn.sources} />
                     )}
+                    {relatedSection(turn.related)}
                   </div>
                 )
               })}
@@ -1236,6 +1293,7 @@ function App() {
                   {!loading && openSources === 'live' && (
                     <SourceList prefix="live-" sources={sources} />
                   )}
+                  {!loading && relatedSection(related)}
                 </>
               )}
 
