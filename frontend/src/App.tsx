@@ -49,7 +49,7 @@ const SUGGESTIONS: string[] = [
   'What did the latest IPCC report say about methane emissions?',
 ]
 
-type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'done'
+type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'done'
 
 type StreamEvent =
   | { type: 'status'; phase: Phase }
@@ -241,6 +241,22 @@ function StatusSteps({
   sourceCount: number
   resolved: string
 }) {
+  if (phase === 'thinking') {
+    return (
+      <div className="status-card rise" role="status" aria-label="Thinking">
+        <ul className="status-list">
+          <li className="status-row active">
+            <span className="step-icon" aria-hidden="true">
+              <span className="step-live">
+                <Sparkle size={16} />
+              </span>
+            </span>
+            Thinking...
+          </li>
+        </ul>
+      </div>
+    )
+  }
   const activeIdx = STEPS.findIndex((s) => s.id === phase)
   return (
     <div className="status-card rise" role="status" aria-label="Search progress">
@@ -349,7 +365,10 @@ function App() {
   const [profile, setProfile] = useState<Profile>(loadProfile)
 
   const loading =
-    phase === 'searching' || phase === 'reading' || phase === 'writing'
+    phase === 'searching' ||
+    phase === 'reading' ||
+    phase === 'writing' ||
+    phase === 'thinking'
   const inThread = turns.length > 0 || asked !== ''
 
   useEffect(() => {
