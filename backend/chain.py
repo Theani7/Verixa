@@ -32,16 +32,16 @@ def get_llm() -> ChatGroq:
             "GROQ_API_KEY is not set. Copy .env.example to .env "
             "and add your key from https://console.groq.com."
         )
-    return ChatGroq(model="llama-3.3-70b-versatile", api_key=api_key)
+    return ChatGroq(model="openai/gpt-oss-120b", api_key=api_key)
 
 
-def build_context(result) -> tuple[str, list[dict]]:
+def build_context(result, max_results: int = 5) -> tuple[str, list[dict]]:
     blocks: list[str] = []
     sources: list[dict] = []
-    for i, item in enumerate(result.results, start=1):
+    for i, item in enumerate(result.results[:max_results], start=1):
         sources.append({"id": i, "title": item.title, "url": item.url})
-        highlights = "\n".join(item.highlights or [])
-        blocks.append(f"[{i}] {item.title}\nURL: {item.url}\n{highlights}")
+        highlights = "\n".join((item.highlights or [])[:2])
+        blocks.append(f"[{i}] {item.title}\nURL: {item.url}\n{highlights[:1500]}")
     return "\n\n".join(blocks), sources
 
 
