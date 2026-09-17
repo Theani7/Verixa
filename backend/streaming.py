@@ -71,6 +71,7 @@ async def event_stream(
 
     if mode == "chat":
         yield _status("thinking")
+        yield _frame({"type": "mode", "mode": "chat"})
         try:
             memories, auto_learn = await run_in_threadpool(
                 load_memory_context, user_id
