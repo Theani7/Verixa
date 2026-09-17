@@ -17,3 +17,18 @@ export interface Thread {
   turns: Turn[]
   ts: number
 }
+
+export interface Prefs {
+  numResults: number
+  stream: boolean
+}
+
+export interface Profile {
+  name: string
+  instructions: string
+}
+
+export const DEFAULT_PREFS: Prefs = { numResults: 5, stream: true }
+export const DEFAULT_PROFILE: Profile = { name: '', instructions: '' }
+export const PREFS_KEY = 'verixa.prefs.v1'
+export const PROFILE_KEY = 'verixa.profile.v1'

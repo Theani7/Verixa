@@ -7,6 +7,13 @@ export interface Session {
   token: string
   id: string
   email: string
+  created_at?: string
+}
+
+export interface Memory {
+  id: string
+  content: string
+  created_at: string
 }
 
 async function request(path: string, init?: RequestInit): Promise<unknown> {
@@ -95,7 +102,7 @@ export async function login(email: string, password: string): Promise<Session> {
   return data
 }
 
-export async function fetchMe(token: string): Promise<{ id: string; email: string }> {
+export async function fetchMe(token: string): Promise<{ id: string; email: string; created_at: string }> {
   const data = await request('/api/me', {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -103,9 +110,64 @@ export async function fetchMe(token: string): Promise<{ id: string; email: strin
     typeof data !== 'object' ||
     data === null ||
     typeof (data as Record<string, unknown>).id !== 'string' ||
-    typeof (data as Record<string, unknown>).email !== 'string'
+    typeof (data as Record<string, unknown>).email !== 'string' ||
+    typeof (data as Record<string, unknown>).created_at !== 'string'
   ) {
     throw new Error('Session is invalid.')
   }
-  return data as { id: string; email: string }
+  return data as { id: string; email: string; created_at: string }
+}
+
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await request('/api/auth/password', {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+}
+
+export async function deleteAccount(token: string): Promise<void> {
+  await request('/api/me', {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+}
+
+function isMemory(value: unknown): value is Memory {
+  if (typeof value !== 'object' || value === null) return false
+  const m = value as Record<string, unknown>
+  return (
+    typeof m.id === 'string' &&
+    typeof m.content === 'string' &&
+    typeof m.created_at === 'string'
+  )
+}
+
+export async function listMemories(token: string): Promise<Memory[]> {
+  const data = (await request('/api/memories', {
+    headers: authHeaders(token),
+  })) as { memories?: unknown }
+  if (!Array.isArray(data.memories)) throw new Error('Invalid memories response.')
+  return data.memories.filter(isMemory)
+}
+
+export async function addMemory(token: string, content: string): Promise<Memory> {
+  const data = await request('/api/memories', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ content }),
+  })
+  if (!isMemory(data)) throw new Error('Invalid memory response.')
+  return data
+}
+
+export async function deleteMemory(token: string, id: string): Promise<void> {
+  await request(`/api/memories/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
 }

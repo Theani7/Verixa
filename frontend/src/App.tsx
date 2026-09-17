@@ -9,6 +9,7 @@ import {
   ChatCircleText,
   Check,
   Copy,
+  GearSix,
   List,
   MagnifyingGlass,
   Newspaper,
@@ -28,7 +29,14 @@ import type { Session } from './api'
 import { SourceList } from './article'
 import { renderRich } from './markdown'
 import AuthModal from './AuthModal'
-import type { Source, Thread, Turn } from './types'
+import SettingsModal from './SettingsModal'
+import type { Prefs, Profile, Source, Thread, Turn } from './types'
+import {
+  DEFAULT_PREFS,
+  DEFAULT_PROFILE,
+  PREFS_KEY,
+  PROFILE_KEY,
+} from './types'
 
 const STORAGE_KEY = 'verixa.threads.v1'
 const AUTH_KEY = 'verixa.auth.v1'
@@ -124,6 +132,33 @@ function loadSession(): Session | null {
     return parsed as Session
   } catch {
     return null
+  }
+}
+
+function loadPrefs(): Prefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    if (!raw) return DEFAULT_PREFS
+    const p = JSON.parse(raw) as Partial<Prefs>
+    const numResults = p.numResults === 3 || p.numResults === 10 ? p.numResults : 5
+    return { numResults, stream: p.stream !== false }
+  } catch {
+    return DEFAULT_PREFS
+  }
+}
+
+function loadProfile(): Profile {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY)
+    if (!raw) return DEFAULT_PROFILE
+    const p = JSON.parse(raw) as Partial<Profile>
+    return {
+      name: typeof p.name === 'string' ? p.name.slice(0, 100) : '',
+      instructions:
+        typeof p.instructions === 'string' ? p.instructions.slice(0, 2000) : '',
+    }
+  } catch {
+    return DEFAULT_PROFILE
   }
 }
 
@@ -279,6 +314,10 @@ function App() {
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [session, setSession] = useState<Session | null>(loadSession)
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profileMenu, setProfileMenu] = useState(false)
+  const [prefs, setPrefs] = useState<Prefs>(loadPrefs)
+  const [profile, setProfile] = useState<Profile>(loadProfile)
 
   const loading =
     phase === 'searching' || phase === 'reading' || phase === 'writing'
@@ -287,6 +326,22 @@ function App() {
   useEffect(() => {
     saveThreads(threads)
   }, [threads])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
+    } catch {
+      /* ignore */
+    }
+  }, [prefs])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+    } catch {
+      /* ignore */
+    }
+  }, [profile])
 
   useEffect(() => {
     const stored = loadSession()
@@ -332,6 +387,20 @@ function App() {
       syncThread(thread, session?.token).catch(() => undefined)
     }
   }
+  function finishTurn(q: string, text: string, srcs: Source[]): void {
+    const turn: Turn = {
+      query: q,
+      answer: normalizeCitations(text),
+      sources: srcs,
+    }
+    setTurns((prev) => [...prev, turn])
+    persistTurn(turn)
+    setAsked('')
+    setAnswer('')
+    setSources([])
+    setPhase('done')
+  }
+
   async function runAsk(text?: string): Promise<void> {
     const q = (text ?? query).trim()
     if (!q || loading) return
@@ -350,11 +419,39 @@ function App() {
     }))
     let full = ''
     let seenSources: Source[] = []
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session) headers.Authorization = `Bearer ${session.token}`
+    const payload = JSON.stringify({
+      query: q,
+      history,
+      num_results: prefs.numResults,
+      profile,
+    })
     try {
+      if (!prefs.stream) {
+        const res = await fetch(`${API_URL}/api/ask`, {
+          method: 'POST',
+          headers,
+          body: payload,
+        })
+        if (!res.ok) throw new Error(`The answer engine returned status ${res.status}.`)
+        const data = (await res.json()) as {
+          answer?: unknown
+          sources?: unknown
+        }
+        full = normalizeCitations(typeof data.answer === 'string' ? data.answer : '')
+        seenSources = Array.isArray(data.sources)
+          ? data.sources.filter(isSource)
+          : []
+        setAnswer(full)
+        setSources(seenSources)
+        finishTurn(q, full, seenSources)
+        return
+      }
       const res = await fetch(`${API_URL}/api/ask/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, history }),
+        headers,
+        body: payload,
       })
       if (!res.ok) throw new Error(`The answer engine returned status ${res.status}.`)
       if (!res.body) throw new Error('Streaming is not supported in this browser.')
@@ -383,17 +480,7 @@ function App() {
               full += e.text
               setAnswer(full)
             } else if (e.type === 'done') {
-              const turn: Turn = {
-                query: q,
-                answer: normalizeCitations(full),
-                sources: seenSources,
-              }
-              setTurns((prev) => [...prev, turn])
-              persistTurn(turn)
-              setAsked('')
-              setAnswer('')
-              setSources([])
-              setPhase('done')
+              finishTurn(q, full, seenSources)
             } else if (e.type === 'error') {
               throw new Error(e.message)
             }
@@ -450,6 +537,27 @@ function App() {
       /* ignore */
     }
   }
+
+  function handleAccountDeleted(): void {
+    setSession(null)
+    setThreads([])
+    try {
+      localStorage.removeItem(AUTH_KEY)
+    } catch {
+      /* ignore */
+    }
+    setSettingsOpen(false)
+    reset()
+  }
+
+  useEffect(() => {
+    if (!profileMenu) return
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') setProfileMenu(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [profileMenu])
 
   function reset(): void {
     setActiveId(null)
@@ -610,20 +718,56 @@ function App() {
         )}
         <div className="auth-block">
           {session ? (
-            <>
-              <span className="auth-email" title={session.email}>
-                {session.email}
-              </span>
+            <div className="profile-wrap">
               <button
                 type="button"
-                className="sign-out"
-                onClick={signOut}
-                aria-label={`Sign out ${session.email}`}
+                className="avatar"
+                onClick={() => setProfileMenu((v) => !v)}
+                aria-expanded={profileMenu}
+                aria-label={`Account menu for ${session.email}`}
               >
-                <SignOut size={16} />
-                Sign out
+                {(session.email.charAt(0) || '?').toUpperCase()}
               </button>
-            </>
+              {profileMenu && (
+                <>
+                  <button
+                    type="button"
+                    className="menu-backdrop"
+                    aria-label="Close account menu"
+                    onClick={() => setProfileMenu(false)}
+                  />
+                  <div className="profile-menu" role="menu" aria-label="Account">
+                    <p className="profile-email" title={session.email}>
+                      {session.email}
+                    </p>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="profile-item"
+                      onClick={() => {
+                        setProfileMenu(false)
+                        setSettingsOpen(true)
+                      }}
+                    >
+                      <GearSix size={16} />
+                      Settings
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="profile-item"
+                      onClick={() => {
+                        setProfileMenu(false)
+                        signOut()
+                      }}
+                    >
+                      <SignOut size={16} />
+                      Sign out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           ) : (
             <button
               type="button"
@@ -799,6 +943,26 @@ function App() {
           initialMode={authModal}
           onClose={() => setAuthModal(null)}
           onSuccess={handleAuthSuccess}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsModal
+          session={session}
+          prefs={prefs}
+          onPrefs={setPrefs}
+          profile={profile}
+          onProfile={setProfile}
+          onClose={() => setSettingsOpen(false)}
+          onSignOut={() => {
+            signOut()
+            setSettingsOpen(false)
+          }}
+          onAccountDeleted={handleAccountDeleted}
+          onOpenAuth={() => {
+            setSettingsOpen(false)
+            setAuthModal('signin')
+          }}
         />
       )}
     </div>

@@ -68,15 +68,30 @@ API docs are served at http://localhost:8000/docs while the backend runs.
 | POST   | `/api/auth/signup`  | Create an account, returns a session token    |
 | POST   | `/api/auth/login`   | Sign in, returns a session token              |
 | GET    | `/api/me`           | Current session account (Bearer token)        |
+| PUT    | `/api/auth/password`| Change password (Bearer token)                |
+| DELETE | `/api/me`           | Delete account, threads, and memories         |
+| GET    | `/api/memories`     | List saved memories (Bearer token)            |
+| POST   | `/api/memories`     | Save a memory (Bearer token)                  |
+| DELETE | `/api/memories/{id}`| Forget a memory (Bearer token)                |
 
 ## Accounts
 
-Sign in from the sidebar opens a popup with sign in and sign up tabs.
-Passwords are bcrypt-hashed, sessions are 7-day JWTs stored only in your
-browser. Threads saved while signed in belong to your account: nobody else
-can overwrite or delete them, even with the id. Share links stay public so
-recipients need no account. Signing in also claims your existing local
-threads for your account.
+Sign in from the sidebar avatar area opens a popup with sign in and sign
+up tabs. Passwords are bcrypt-hashed, sessions are 7-day JWTs stored only
+in your browser. Threads saved while signed in belong to your account:
+nobody else can overwrite or delete them, even with the id. Share links
+stay public so recipients need no account. Signing in also claims your
+existing local threads for your account.
+
+## Settings
+
+The profile menu (avatar, bottom of the sidebar) opens Settings with four
+sections. Account shows your email and join date, changes the password,
+signs out, or deletes the account with everything in it. Preferences tunes
+results per search (3, 5, or 10) and answer delivery (stream live or all at
+once). Personalization stores your name and response instructions on the
+device and sends them with every question. Memory keeps facts Verixa should
+remember; signed-in users get them injected into every answer.
 
 ## Sharing
 

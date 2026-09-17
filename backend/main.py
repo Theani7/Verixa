@@ -302,7 +302,11 @@ def add_memory(
         row = Memory(user_id=user.id, content=req.content.strip())
         session.add(row)
         session.flush()
-        return {"id": str(row.id), "content": row.content}
+        return {
+            "id": str(row.id),
+            "content": row.content,
+            "created_at": row.created_at.isoformat(),
+        }
 
 
 @app.delete("/api/memories/{memory_id}")
