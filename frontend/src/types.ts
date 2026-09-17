@@ -9,6 +9,9 @@ export interface Turn {
   query: string
   answer: string
   sources: Source[]
+  mode: 'search' | 'chat'
+  searchedQuery: string
+  durationMs: number
 }
 
 export interface Thread {

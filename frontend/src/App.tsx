@@ -10,9 +10,9 @@ import {
   Check,
   Copy,
   GearSix,
+  GlobeHemisphereWest,
   List,
   MagnifyingGlass,
-  Newspaper,
   SidebarSimple,
   PencilLine,
   Plus,
@@ -21,6 +21,7 @@ import {
   SignOut,
   Sparkle,
   SpinnerGap,
+  Timer,
   Trash,
   Tray,
   WarningCircle,
@@ -29,7 +30,7 @@ import './App.css'
 import { API_URL, deleteSharedThread, fetchMe, syncThread } from './api'
 import type { Session } from './api'
 import { SourceList } from './article'
-import { renderRich } from './markdown'
+import { faviconFor, hostnameOf, renderRich } from './markdown'
 import AuthModal from './AuthModal'
 import SettingsModal from './SettingsModal'
 import type { Prefs, Profile, Source, Thread, Turn } from './types'
@@ -98,6 +99,7 @@ type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'done'
 
 type StreamEvent =
   | { type: 'status'; phase: Phase }
+  | { type: 'mode'; mode: Turn['mode'] }
   | { type: 'rewrite'; query: string }
   | { type: 'sources'; sources: Source[] }
   | { type: 'token'; text: string }
@@ -129,11 +131,17 @@ function normalizeThread(value: unknown): Thread | null {
   if (Array.isArray(t.turns)) {
     const turns: Turn[] = t.turns
       .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
-      .map((x) => ({
-        query: typeof x.query === 'string' ? x.query : '',
-        answer: typeof x.answer === 'string' ? x.answer : '',
-        sources: Array.isArray(x.sources) ? x.sources.filter(isSource) : [],
-      }))
+      .map((x) => {
+        const sources = Array.isArray(x.sources) ? x.sources.filter(isSource) : []
+        return {
+          query: typeof x.query === 'string' ? x.query : '',
+          answer: typeof x.answer === 'string' ? x.answer : '',
+          sources,
+          mode: x.mode === 'chat' ? ('chat' as const) : ('search' as const),
+          searchedQuery: typeof x.searchedQuery === 'string' ? x.searchedQuery : '',
+          durationMs: typeof x.durationMs === 'number' ? x.durationMs : 0,
+        }
+      })
       .filter((x) => x.query !== '')
     if (turns.length === 0) return null
     return {
@@ -153,6 +161,9 @@ function normalizeThread(value: unknown): Thread | null {
           query: t.query,
           answer: t.answer,
           sources: Array.isArray(t.sources) ? t.sources.filter(isSource) : [],
+          mode: 'search',
+          searchedQuery: '',
+          durationMs: 0,
         },
       ],
       ts: typeof t.ts === 'number' ? t.ts : Date.now(),
@@ -507,11 +518,21 @@ function App() {
       syncThread(thread, session?.token).catch(() => undefined)
     }
   }
-  function finishTurn(q: string, text: string, srcs: Source[]): void {
+  function finishTurn(
+    q: string,
+    text: string,
+    srcs: Source[],
+    mode: Turn['mode'],
+    searchedQuery: string,
+    durationMs: number,
+  ): void {
     const turn: Turn = {
       query: q,
       answer: normalizeCitations(text),
       sources: srcs,
+      mode,
+      searchedQuery,
+      durationMs,
     }
     setTurns((prev) => [...prev, turn])
     persistTurn(turn)
@@ -539,6 +560,9 @@ function App() {
     }))
     let full = ''
     let seenSources: Source[] = []
+    let mode: Turn['mode'] = 'search'
+    let standalone = q
+    const started = Date.now()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (session) headers.Authorization = `Bearer ${session.token}`
     const payload = JSON.stringify({
@@ -558,14 +582,20 @@ function App() {
         const data = (await res.json()) as {
           answer?: unknown
           sources?: unknown
+          mode?: unknown
+          query?: unknown
         }
         full = normalizeCitations(typeof data.answer === 'string' ? data.answer : '')
         seenSources = Array.isArray(data.sources)
           ? data.sources.filter(isSource)
           : []
+        if (data.mode === 'chat') mode = 'chat'
+        if (typeof data.query === 'string' && data.query.trim() !== '') {
+          standalone = data.query
+        }
         setAnswer(full)
         setSources(seenSources)
-        finishTurn(q, full, seenSources)
+        finishTurn(q, full, seenSources, mode, standalone, Date.now() - started)
         return
       }
       const res = await fetch(`${API_URL}/api/ask/stream`, {
@@ -591,7 +621,10 @@ function App() {
             const e = JSON.parse(line.slice(6)) as StreamEvent
             if (e.type === 'status') {
               setPhase(e.phase)
+            } else if (e.type === 'mode') {
+              mode = e.mode
             } else if (e.type === 'rewrite') {
+              standalone = e.query
               setResolvedQuery(e.query)
             } else if (e.type === 'sources') {
               seenSources = e.sources ?? []
@@ -600,7 +633,7 @@ function App() {
               full += e.text
               setAnswer(full)
             } else if (e.type === 'done') {
-              finishTurn(q, full, seenSources)
+              finishTurn(q, full, seenSources, mode, standalone, Date.now() - started)
             } else if (e.type === 'error') {
               throw new Error(e.message)
             }
@@ -728,69 +761,136 @@ function App() {
 
   const streaming = answer !== '' && phase !== 'done'
   const displayAnswer = normalizeCitations(answer)
+  const firstName = profile.name.trim().split(/\s+/)[0] ?? ''
 
-  function answerCard(
+  function formatSecs(ms: number): string {
+    return `${Math.max(1, Math.round(ms / 1000))}s`
+  }
+
+  function favicons(list: Source[]): string[] {
+    const seen = new Map<string, string>()
+    for (const s of list) {
+      const host = hostnameOf(s.url)
+      if (!seen.has(host)) seen.set(host, s.url)
+      if (seen.size >= 3) break
+    }
+    return [...seen.values()]
+  }
+
+  function hideBroken(e: React.SyntheticEvent<HTMLImageElement>): void {
+    e.currentTarget.style.display = 'none'
+  }
+
+  function answerBody(
     key: string,
     text: string,
     plain: boolean,
-    copyKey: string,
+    citeSources: Source[],
   ): ReactNode {
-    const copied = copiedKey === copyKey
     return (
-      <section className="answer-card rise" aria-label="Answer">
-        <div className="answer-head">
-          <p className="answer-label">
-            <Sparkle size={15} aria-hidden="true" />
-            Answer
+      <div className="answer-body">
+        {plain ? (
+          <p className="stream-text">
+            {text}
+            <span className="stream-caret" aria-hidden="true" />
           </p>
-          <button
-            type="button"
-            className="copy-button"
-            onClick={() => copyAnswer(text, copyKey)}
-          >
-            <span key={String(copied)} className="copy-pop">
-              {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
-            </span>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        <div className="answer-body">
-          {plain ? (
-            <p className="stream-text">
-              {text}
-              <span className="stream-caret" aria-hidden="true" />
-            </p>
-          ) : (
-            renderRich(text, `${key}-`)
-          )}
-        </div>
-      </section>
+        ) : (
+          renderRich(text, `${key}-`, citeSources)
+        )}
+      </div>
     )
   }
 
-  function sourcesToggle(key: string, list: Source[]): ReactNode {
-    if (list.length === 0) return null
+  function sourcesPill(key: string, list: Source[]): ReactNode {
     const open = openSources === key
     return (
-      <section className="rise rise-1" aria-label="Sources">
+      <button
+        type="button"
+        className="sources-pill"
+        onClick={() => toggleSources(key)}
+        aria-expanded={open}
+        aria-controls={`${key}-sources-list`}
+      >
+        <span className="pill-label">Sources</span>
+        <span className="favicon-stack" aria-hidden="true">
+          {favicons(list).map((u) => (
+            <img key={u} src={faviconFor(u)} alt="" loading="lazy" onError={hideBroken} />
+          ))}
+        </span>
+        <span className="pill-count">{list.length}</span>
+        <CaretDown
+          size={16}
+          weight="bold"
+          className={`sources-caret${open ? ' open' : ''}`}
+        />
+      </button>
+    )
+  }
+
+  function actionBar(
+    key: string,
+    text: string,
+    list: Source[],
+    copyKey: string,
+  ): ReactNode {
+    const copied = copiedKey === copyKey
+    const open = openSources === key
+    return (
+      <div className="action-bar">
         <button
           type="button"
-          className="sources-toggle"
-          onClick={() => toggleSources(key)}
-          aria-expanded={open}
-          aria-controls={`${key}-sources-list`}
+          className="action-btn"
+          aria-label={copied ? 'Copied' : 'Copy answer'}
+          title="Copy"
+          onClick={() => copyAnswer(text, copyKey)}
         >
-          <Newspaper size={16} aria-hidden="true" />
-          <span className="sources-count">{list.length}</span>
-          Sources
-          <CaretDown
-            size={16}
-            weight="bold"
-            className={`sources-caret${open ? ' open' : ''}`}
-          />
+          <span key={String(copied)} className="copy-pop">
+            {copied ? <Check size={17} /> : <Copy size={17} />}
+          </span>
         </button>
-        {open && <SourceList prefix={`${key}-`} sources={list} />}
-      </section>
+        <button
+          type="button"
+          className="action-btn"
+          aria-label="Copy thread link"
+          title="Share thread"
+          onClick={() => shareThread()}
+        >
+          {shareState === 'copied' ? <Check size={17} /> : <ShareNetwork size={17} />}
+        </button>
+        {list.length > 0 && (
+          <button
+            type="button"
+            className="sources-count-btn"
+            onClick={() => toggleSources(key)}
+            aria-expanded={open}
+          >
+            <span className="favicon-stack sm" aria-hidden="true">
+              {favicons(list).map((u) => (
+                <img
+                  key={u}
+                  src={faviconFor(u)}
+                  alt=""
+                  loading="lazy"
+                  onError={hideBroken}
+                />
+              ))}
+            </span>
+            {list.length} sources
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  function searchingLine(query: string, searched: string): ReactNode {
+    if (searched === '' || searched.toLowerCase() === query.toLowerCase()) {
+      return null
+    }
+    return (
+      <p className="searching-line">
+        <GlobeHemisphereWest size={15} aria-hidden="true" />
+        Searching for {searched}
+      </p>
     )
   }
 
@@ -1025,7 +1125,11 @@ function App() {
 
           {!inThread && (
             <main className="hero">
-              <h1 className="hero-title rise">What do you want to know?</h1>
+              <h1 className="hero-title rise">
+                {firstName !== ''
+                  ? `Hi, ${firstName}! How can I help you today?`
+                  : 'What do you want to know?'}
+              </h1>
               <p className="hero-sub rise rise-1">
                 Ask anything. Verixa searches the live web and writes an
                 answer with sources you can check.
@@ -1070,16 +1174,36 @@ function App() {
                 const key = `t${ti}`
                 return (
                   <div className="turn" key={key}>
-                    <h2 className="turn-query">{turn.query}</h2>
-                    {answerCard(key, turn.answer, false, key)}
-                    {sourcesToggle(key, turn.sources)}
+                    <div className="bubble-row">
+                      <h2 className="user-bubble">{turn.query}</h2>
+                    </div>
+                    {turn.mode === 'search' && (
+                      <div className="turn-meta">
+                        {turn.durationMs > 0 && (
+                          <span className="researched">
+                            <Timer size={14} aria-hidden="true" />
+                            Researched {formatSecs(turn.durationMs)}
+                          </span>
+                        )}
+                        {turn.sources.length > 0 && sourcesPill(key, turn.sources)}
+                      </div>
+                    )}
+                    {turn.mode === 'search' &&
+                      searchingLine(turn.query, turn.searchedQuery)}
+                    {answerBody(key, turn.answer, false, turn.sources)}
+                    {actionBar(key, turn.answer, turn.sources, key)}
+                    {openSources === key && (
+                      <SourceList prefix={`${key}-`} sources={turn.sources} />
+                    )}
                   </div>
                 )
               })}
 
               {asked !== '' && (
                 <>
-                  <h1 className="query-title">{asked}</h1>
+                  <div className="bubble-row">
+                    <h1 className="user-bubble">{asked}</h1>
+                  </div>
 
                   {loading && (
                     <StatusSteps
@@ -1089,7 +1213,8 @@ function App() {
                     />
                   )}
 
-                  {answer !== '' && answerCard('live', displayAnswer, streaming, 'live')}
+                  {answer !== '' &&
+                    answerBody('live', displayAnswer, streaming, sources)}
 
                   {error && (
                     <div className="error-card" role="alert">
@@ -1108,7 +1233,13 @@ function App() {
                     </div>
                   )}
 
-                  {sources.length > 0 && phase === 'done' && sourcesToggle('live', sources)}
+                  {!loading &&
+                    answer !== '' &&
+                    actionBar('live', displayAnswer, sources, 'live')}
+                  {!loading && openSources === 'live' && (
+                    <SourceList prefix="live-" sources={sources} />
+                  )}
+                  {loading && sources.length > 0 && sourcesPill('live', sources)}
                 </>
               )}
 

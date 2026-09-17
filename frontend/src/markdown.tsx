@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { Source } from './types'
 
 export function hostnameOf(url: string): string {
   try {
@@ -8,8 +9,22 @@ export function hostnameOf(url: string): string {
   }
 }
 
-/* Inline Markdown: bold, code spans, links, and [n] citation chips. */
-function renderInline(text: string, keyPrefix: string, citePrefix = ''): ReactNode[] {
+export function faviconFor(url: string): string {
+  return `https://www.google.com/s2/favicons?domain=${hostnameOf(url)}&sz=64`
+}
+
+export function shortHost(url: string): string {
+  return hostnameOf(url).split('.')[0]
+}
+
+/* Inline Markdown: bold, code spans, links, and citation chips. Cite chips
+   show the source favicon plus domain when the source list is provided. */
+function renderInline(
+  text: string,
+  keyPrefix: string,
+  citePrefix = '',
+  sources: Source[] = [],
+): ReactNode[] {
   const parts = text.split(
     /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:[^)\s]+\)|\[\d+\])/,
   )
@@ -33,12 +48,34 @@ function renderInline(text: string, keyPrefix: string, citePrefix = ''): ReactNo
         </a>
       )
     const cite = part.match(/^\[(\d+)\]$/)
-    if (cite)
+    if (cite) {
+      const src = sources.find((s) => s.id === Number(cite[1]))
+      if (!src) {
+        return (
+          <a key={key} className="cite" href={`#${citePrefix}source-${cite[1]}`}>
+            {cite[1]}
+          </a>
+        )
+      }
       return (
-        <a key={key} className="cite" href={`#${citePrefix}source-${cite[1]}`}>
-          {cite[1]}
+        <a
+          key={key}
+          className="cite-rich"
+          href={`#${citePrefix}source-${cite[1]}`}
+          title={src.url}
+        >
+          <img
+            src={faviconFor(src.url)}
+            alt=""
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+          <span>{shortHost(src.url)}</span>
         </a>
       )
+    }
     return <span key={key}>{part}</span>
   })
 }
@@ -64,7 +101,11 @@ function isDelimiter(line: string): boolean {
 /* Block Markdown: fences, tables, headings, quotes, rules, lists,
    paragraphs. Built as elements, never injected HTML, so source text
    cannot break out. */
-export function renderRich(text: string, citePrefix = ''): ReactNode[] {
+export function renderRich(
+  text: string,
+  citePrefix = '',
+  sources: Source[] = [],
+): ReactNode[] {
   const nodes: ReactNode[] = []
   const fenceSplit = text.split(/```/)
   let key = 0
@@ -85,7 +126,7 @@ export function renderRich(text: string, citePrefix = ''): ReactNode[] {
       nodes.push(
         <Tag key={`l-${listKey}`}>
           {items.map((item, ii) => (
-            <li key={ii}>{renderInline(item, `l-${listKey}-i${ii}`, citePrefix)}</li>
+            <li key={ii}>{renderInline(item, `l-${listKey}-i${ii}`, citePrefix, sources)}</li>
           ))}
         </Tag>,
       )
@@ -123,7 +164,7 @@ export function renderRich(text: string, citePrefix = ''): ReactNode[] {
                 <tr>
                   {headers.map((h, hi) => (
                     <th key={hi} scope="col">
-                      {renderInline(h, `t-${tableKey}-h${hi}`, citePrefix)}
+                      {renderInline(h, `t-${tableKey}-h${hi}`, citePrefix, sources)}
                     </th>
                   ))}
                 </tr>
@@ -133,7 +174,7 @@ export function renderRich(text: string, citePrefix = ''): ReactNode[] {
                   <tr key={ri}>
                     {row.map((cell, ci) => (
                       <td key={ci}>
-                        {renderInline(cell, `t-${tableKey}-r${ri}c${ci}`, citePrefix)}
+                        {renderInline(cell, `t-${tableKey}-r${ri}c${ci}`, citePrefix, sources)}
                       </td>
                     ))}
                   </tr>
@@ -149,7 +190,7 @@ export function renderRich(text: string, citePrefix = ''): ReactNode[] {
         const content = (h3 ?? h2)?.[1] ?? ''
         const headKey = key++
         nodes.push(
-          <Tag key={`h-${headKey}`}>{renderInline(content, `h-${headKey}`, citePrefix)}</Tag>,
+          <Tag key={`h-${headKey}`}>{renderInline(content, `h-${headKey}`, citePrefix, sources)}</Tag>,
         )
       } else if (quote) {
         flushList()
@@ -193,7 +234,7 @@ export function renderRich(text: string, citePrefix = ''): ReactNode[] {
         li += 1
         const paraKey = key++
         nodes.push(
-          <p key={`p-${paraKey}`}>{renderInline(line, `p-${paraKey}`, citePrefix)}</p>,
+          <p key={`p-${paraKey}`}>{renderInline(line, `p-${paraKey}`, citePrefix, sources)}</p>,
         )
       }
     }

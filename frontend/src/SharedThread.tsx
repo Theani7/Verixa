@@ -6,6 +6,18 @@ import { SourceList } from './article'
 import { renderRich } from './markdown'
 import type { Thread } from './types'
 
+function withDefaults(thread: Thread): Thread {
+  return {
+    ...thread,
+    turns: thread.turns.map((t) => ({
+      ...t,
+      mode: t.mode ?? 'search',
+      searchedQuery: t.searchedQuery ?? '',
+      durationMs: t.durationMs ?? 0,
+    })),
+  }
+}
+
 export default function SharedThread({ id }: { id: string }) {
   const [thread, setThread] = useState<Thread | null>(null)
   const [missing, setMissing] = useState(false)
@@ -16,7 +28,7 @@ export default function SharedThread({ id }: { id: string }) {
     fetchSharedThread(id)
       .then((t) => {
         if (!live) return
-        setThread(t)
+        setThread(withDefaults(t))
         document.title = `${t.title} - Verixa`
       })
       .catch(() => {
@@ -60,18 +72,20 @@ export default function SharedThread({ id }: { id: string }) {
             <LinkSimple size={14} aria-hidden="true" />
             Shared thread
           </p>
-          <h1 className="query-title">{thread.title}</h1>
+          <h1 className="shared-title">{thread.title}</h1>
           {thread.turns.map((turn, ti) => {
             const prefix = `s${ti}-`
             return (
               <div className="turn" key={prefix}>
-                <h2 className="turn-query">{turn.query}</h2>
-                <section className="answer-card" aria-label="Answer">
-                  <div className="answer-body">{renderRich(turn.answer, prefix)}</div>
-                </section>
+                <div className="bubble-row">
+                  <h2 className="user-bubble">{turn.query}</h2>
+                </div>
+                <div className="answer-body">
+                  {renderRich(turn.answer, prefix, turn.sources)}
+                </div>
                 {turn.sources.length > 0 && (
                   <section aria-label="Sources">
-                    <p className="answer-label">Sources</p>
+                    <p className="shared-sources-label">Sources</p>
                     <SourceList prefix={prefix} sources={turn.sources} />
                   </section>
                 )}
