@@ -28,6 +28,7 @@ from backend.chain import (
     rewrite_query,
     route_message,
 )
+from backend.deep import DEEP_PER_SEARCH, decompose, merge_results, reflect_gaps
 from verixa.search import web_search
 
 
@@ -61,14 +62,77 @@ async def event_stream(
     profile: dict | None = None,
     num_results: int | None = None,
     user_id=None,
+    mode: str = "search",
 ) -> AsyncIterator[str]:
     history = history or []
     count = num_results or DEFAULT_RESULTS
     try:
         llm = get_llm()
-        mode = await run_in_threadpool(route_message, query, history, llm)
+        if mode != "deep":
+            mode = await run_in_threadpool(route_message, query, history, llm)
     except Exception:
         mode = "search"
+
+    if mode == "deep":
+        yield _status("researching")
+        try:
+            memories, auto_learn = await run_in_threadpool(
+                load_memory_context, user_id
+            )
+            extra = build_system_extra(profile, memories)
+            history_text = format_history(history)
+            yield _frame({"type": "progress", "label": "Planning research angles"})
+            plan = await run_in_threadpool(decompose, query, history_text, llm)
+            collected = []
+            for i, sub in enumerate(plan):
+                yield _frame(
+                    {
+                        "type": "progress",
+                        "label": f"Searching angle {i + 1} of {len(plan)}",
+                    }
+                )
+                try:
+                    collected.append(
+                        await run_in_threadpool(web_search, sub, DEEP_PER_SEARCH)
+                    )
+                except Exception:
+                    continue
+            context, sources = merge_results(collected)
+            yield _frame({"type": "progress", "label": "Checking what is missing"})
+            followups = await run_in_threadpool(reflect_gaps, query, context, llm)
+            for sub in followups:
+                yield _frame({"type": "progress", "label": "Running follow-up search"})
+                try:
+                    collected.append(
+                        await run_in_threadpool(web_search, sub, DEEP_PER_SEARCH)
+                    )
+                except Exception:
+                    continue
+            if followups:
+                context, sources = merge_results(collected)
+            yield _frame({"type": "sources", "sources": sources})
+            yield _status("writing")
+            chain = build_answer_chain(extra)
+            full_text = ""
+            async for text in _stream_text(
+                chain,
+                {"history": history_text, "query": query, "context": context},
+            ):
+                full_text += text
+                yield _frame({"type": "token", "text": text})
+        except Exception as exc:
+            yield _frame({"type": "error", "message": f"Deep research failed: {exc}"})
+            return
+        yield _frame({"type": "done"})
+        await run_in_threadpool(
+            maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
+        )
+        related = await run_in_threadpool(
+            related_questions, query, full_text, get_llm()
+        )
+        if related:
+            yield _frame({"type": "related", "questions": related})
+        return
 
     if mode == "chat":
         yield _status("thinking")

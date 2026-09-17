@@ -2,6 +2,7 @@
 
 import re
 import uuid
+from typing import Literal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException
@@ -54,6 +55,7 @@ class AskRequest(BaseModel):
     history: list[HistoryTurn] = []
     num_results: int | None = Field(default=None, ge=1, le=10)
     profile: dict = Field(default_factory=dict)
+    mode: Literal["search", "deep"] = "search"
 
 
 class ThreadSave(BaseModel):
@@ -152,12 +154,22 @@ def ask(
     req: AskRequest,
     authorization: str | None = Header(default=None),
 ) -> dict:
+    user_id = user_id_from_header(authorization)
+    if req.mode == "deep":
+        from backend.deep import deep_answer
+
+        return deep_answer(
+            req.query,
+            [t.model_dump() for t in req.history],
+            profile=_clean_profile(req.profile),
+            user_id=user_id,
+        )
     return answer_query(
         req.query,
         [t.model_dump() for t in req.history],
         profile=_clean_profile(req.profile),
         num_results=req.num_results,
-        user_id=user_id_from_header(authorization),
+        user_id=user_id,
     )
 
 
@@ -173,6 +185,7 @@ def ask_stream(
             profile=_clean_profile(req.profile),
             num_results=req.num_results,
             user_id=user_id_from_header(authorization),
+            mode=req.mode,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

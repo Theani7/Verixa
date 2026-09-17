@@ -22,6 +22,14 @@ load_dotenv()
 
 DEFAULT_RESULTS = 5
 
+# Deep research budgets: several small searches stay inside token limits
+# where one giant context would overflow them.
+DEEP_SUBQUERIES = 3
+DEEP_FOLLOWUPS = 2
+DEEP_PER_SEARCH = 3
+DEEP_CHAR_CAP = 800
+MAX_SOURCES = 10
+
 # Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】).
 NATIVE_CITATION_RE = re.compile(r"【(\d+)(?:[†‡][^】]*)?】")
 
@@ -155,14 +163,16 @@ def build_chat_chain(system_extra: str = ""):
     return prompt | get_llm()
 
 
-def build_context(result, max_results: int = DEFAULT_RESULTS) -> tuple[str, list[dict]]:
+def build_context(
+    result, max_results: int = DEFAULT_RESULTS, char_cap: int = 1500
+) -> tuple[str, list[dict]]:
     blocks: list[str] = []
     sources: list[dict] = []
     for i, item in enumerate(result.results[:max_results], start=1):
         excerpt = (item.highlights or [""])[0][:220]
         sources.append({"id": i, "title": item.title, "url": item.url, "excerpt": excerpt})
         highlights = "\n".join((item.highlights or [])[:2])
-        blocks.append(f"[{i}] {item.title}\nURL: {item.url}\n{highlights[:1500]}")
+        blocks.append(f"[{i}] {item.title}\nURL: {item.url}\n{highlights[:char_cap]}")
     return "\n\n".join(blocks), sources
 
 
