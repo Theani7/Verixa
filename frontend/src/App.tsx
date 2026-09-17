@@ -23,7 +23,8 @@ import {
 import './App.css'
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
-const STORAGE_KEY = 'seekora.threads.v1'
+const STORAGE_KEY = 'verixa.threads.v1'
+const LEGACY_STORAGE_KEY = 'seekora.threads.v1'
 const MAX_THREADS = 30
 
 const SUGGESTIONS: string[] = [
@@ -87,7 +88,8 @@ function isThread(value: unknown): value is Thread {
 
 function loadThreads(): Thread[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw =
+      localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -257,11 +259,11 @@ function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: Com
 
   return (
     <div className="composer">
-      <label className="visually-hidden" htmlFor="seekora-query">
+      <label className="visually-hidden" htmlFor="verixa-query">
         Ask a question
       </label>
       <textarea
-        id="seekora-query"
+        id="verixa-query"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
@@ -443,8 +445,8 @@ function App() {
     <div className={`app${sidebarOpen ? ' sidebar-open' : ''}`}>
       <aside className="sidebar" aria-label="Threads">
         <div className="brand-row">
-          <span className="brand-mark" aria-hidden="true">S</span>
-          <span className="brand">Seekora</span>
+          <span className="brand-mark" aria-hidden="true">V</span>
+          <span className="brand">Verixa</span>
         </div>
         <button type="button" className="new-thread" onClick={reset}>
           <Plus size={18} weight="bold" />
@@ -508,14 +510,14 @@ function App() {
             >
               <List size={20} />
             </button>
-            <span className="brand">Seekora</span>
+            <span className="brand">Verixa</span>
           </header>
 
           {!asked && (
             <main className="hero">
               <h1 className="hero-title rise">What do you want to know?</h1>
               <p className="hero-sub rise rise-1">
-                Ask anything. Seekora searches the live web and writes an
+                Ask anything. Verixa searches the live web and writes an
                 answer with sources you can check.
               </p>
               <form onSubmit={(e) => e.preventDefault()} className="rise rise-2">
@@ -694,7 +696,7 @@ function App() {
           )}
 
           <footer className="footer">
-            Seekora answers from live web sources via Exa. Verify important
+            Verixa answers from live web sources via Exa. Verify important
             claims before acting on them.
           </footer>
         </div>

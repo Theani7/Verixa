@@ -1,1 +1,1 @@
-"""Seekora backend — FastAPI + LangChain + Exa."""
+"""Verixa backend — FastAPI + LangChain + Exa."""

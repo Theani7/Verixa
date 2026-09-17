@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 
-from seekora.search import web_search
+from verixa.search import web_search
 
 load_dotenv()
 
@@ -22,7 +22,7 @@ load_dotenv()
 NATIVE_CITATION_RE = re.compile(r"【(\d+)[†‡][^】]*】")
 
 SYSTEM_PROMPT = (
-    "You are Seekora, a Perplexity-style research assistant. "
+    "You are Verixa, a Perplexity-style research assistant. "
     "Answer the user's question using ONLY the provided web sources. "
     "Cite every factual claim inline ONLY as [1], [2] matching the source numbers. "
     "Never use any other citation format: no 【】 brackets, no footnotes. "

@@ -1,6 +1,6 @@
-# Seekora
+# Verixa
 
-A Perplexity-style answer engine. Ask anything: Seekora searches the live web
+A Perplexity-style answer engine. Ask anything: Verixa searches the live web
 with [Exa](https://exa.ai), synthesizes a cited answer with LangChain + Groq,
 and streams it token by token into a dark, minimal React UI.
 
@@ -63,7 +63,7 @@ API docs are served at http://localhost:8000/docs while the backend runs.
 
 ```
 backend/        FastAPI app, LangChain chain, SSE streaming
-seekora/        Exa web-search tool (recommended /search request shape)
+verixa/         Exa web-search tool (recommended /search request shape)
 frontend/       Vite + React answer-engine UI
 ```
 
@@ -75,4 +75,4 @@ frontend/       Vite + React answer-engine UI
   instead of the `/answer` endpoint.
 - Model-native citation markers (e.g. `【2†L1-L9】`) are normalized to
   `[n]` chips on both the backend and the streaming frontend.
-- Thread history lives in `localStorage` under `seekora.threads.v1`.
+- Thread history lives in `localStorage` under `verixa.threads.v1`.

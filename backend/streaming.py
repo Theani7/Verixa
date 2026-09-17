@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from starlette.concurrency import run_in_threadpool
 
 from backend.chain import build_answer_chain, build_context
-from seekora.search import web_search
+from verixa.search import web_search
 
 
 def _frame(obj: dict) -> str:

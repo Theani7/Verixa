@@ -54,7 +54,7 @@ def format_results(result) -> str:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
-        print('Usage: python -m seekora.search "your query here"')
+        print('Usage: python -m verixa.search "your query here"')
         return 2
     result = web_search(" ".join(argv))
     print(format_results(result))

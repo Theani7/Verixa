@@ -1,4 +1,4 @@
-"""FastAPI entrypoint for the Seekora Perplexity clone."""
+"""FastAPI entrypoint for the Verixa Perplexity clone."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from backend.chain import answer_query
 from backend.streaming import event_stream
 
-app = FastAPI(title="Seekora API")
+app = FastAPI(title="Verixa API")
 
 app.add_middleware(
     CORSMiddleware,
