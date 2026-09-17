@@ -1,3 +1,4 @@
+import { cloneElement, isValidElement } from 'react'
 import type { ReactNode } from 'react'
 import type { Source } from './types'
 import CodeBlock from './codeblock'
@@ -34,20 +35,31 @@ export function normalizeCitations(text: string): string {
   return cleaned
 }
 
-/* Inline Markdown: bold, code spans, links, and citation chips. */
+/* Inline Markdown: bold, italic, bold-italic, code spans, links, and citation chips. */
 function renderInline(
   text: string,
   keyPrefix: string,
-  citePrefix = '',
+  _citePrefix = '',
   sources: Source[] = [],
 ): ReactNode[] {
   const parts = text.split(
-    /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:[^)\s]+\)|\[\d+\])/,
+    /(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\(https?:[^)\s]+\)|\[\d+\])/,
   )
   return parts.map((part, i) => {
     const key = `${keyPrefix}-${i}`
+    const boldItalic = part.match(/^\*\*\*([^*]+)\*\*\*$/)
+    if (boldItalic)
+      return (
+        <strong key={key}>
+          <em>{boldItalic[1]}</em>
+        </strong>
+      )
     const bold = part.match(/^\*\*([^*]+)\*\*$/)
     if (bold) return <strong key={key}>{bold[1]}</strong>
+    const italicAst = part.match(/^\*([^*]+)\*$/)
+    if (italicAst) return <em key={key}>{italicAst[1]}</em>
+    const italicUnd = part.match(/^_([^_]+)_$/)
+    if (italicUnd) return <em key={key}>{italicUnd[1]}</em>
     const code = part.match(/^`([^`]+)`$/)
     if (code) return <code key={key}>{code[1]}</code>
     const link = part.match(/^\[([^\]]+)\]\((https?:[^)\s]+)\)$/)
@@ -68,16 +80,18 @@ function renderInline(
       const src = sources.find((s) => s.id === Number(cite[1]))
       if (!src) {
         return (
-          <a key={key} className="cite" href={`#${citePrefix}source-${cite[1]}`}>
+          <span key={key} className="cite">
             {cite[1]}
-          </a>
+          </span>
         )
       }
       return (
         <a
           key={key}
           className="cite-rich"
-          href={`#${citePrefix}source-${cite[1]}`}
+          href={src.url}
+          target="_blank"
+          rel="noreferrer"
           title={src.title || src.url}
         >
           <img
@@ -184,6 +198,7 @@ export function renderRich(
   text: string,
   citePrefix = '',
   sources: Source[] = [],
+  streaming = false,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const normalized = normalizeCitations(text)
@@ -308,7 +323,7 @@ export function renderRich(
               .split('\n')
               .filter((p) => p.trim() !== '')
               .map((p, pi) => (
-                <p key={pi}>{renderInline(p, `q-${quoteKey}-${pi}`, citePrefix)}</p>
+                <p key={pi}>{renderInline(p, `q-${quoteKey}-${pi}`, citePrefix, sources)}</p>
               ))}
           </blockquote>,
         )
@@ -342,6 +357,24 @@ export function renderRich(
     }
     flushList()
   })
+
+  if (streaming) {
+    if (nodes.length > 0) {
+      const lastIndex = nodes.length - 1
+      const lastNode = nodes[lastIndex]
+      if (isValidElement<{ children?: ReactNode }>(lastNode)) {
+        const children = lastNode.props.children
+        const newChildren = Array.isArray(children)
+          ? [...children, <span key="stream-caret" className="stream-caret" aria-hidden="true" />]
+          : [children, <span key="stream-caret" className="stream-caret" aria-hidden="true" />]
+        nodes[lastIndex] = cloneElement(lastNode, {}, newChildren)
+      } else {
+        nodes.push(<span key="stream-caret" className="stream-caret" aria-hidden="true" />)
+      }
+    } else {
+      nodes.push(<span key="stream-caret" className="stream-caret" aria-hidden="true" />)
+    }
+  }
 
   return nodes
 }

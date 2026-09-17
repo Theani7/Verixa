@@ -1163,19 +1163,12 @@ function App() {
   function answerBody(
     key: string,
     text: string,
-    plain: boolean,
+    isStreaming: boolean,
     citeSources: Source[],
   ): ReactNode {
     return (
       <div className="answer-body">
-        {plain ? (
-          <p className="stream-text">
-            {text}
-            <span className="stream-caret" aria-hidden="true" />
-          </p>
-        ) : (
-          renderRich(text, `${key}-`, citeSources)
-        )}
+        {renderRich(text, `${key}-`, citeSources, isStreaming)}
       </div>
     )
   }
