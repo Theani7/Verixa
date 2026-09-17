@@ -3,12 +3,22 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
   ArrowClockwise,
   ArrowRight,
+  ArrowUpRight,
+  BookOpenText,
   CaretDown,
+  ChatCircleText,
   Check,
   Copy,
   List,
+  MagnifyingGlass,
+  Newspaper,
+  PencilLine,
   Plus,
-  X,
+  Sparkle,
+  SpinnerGap,
+  Trash,
+  Tray,
+  WarningCircle,
 } from '@phosphor-icons/react'
 import './App.css'
 
@@ -190,16 +200,16 @@ function renderRich(text: string): ReactNode[] {
 
 type StepId = 'searching' | 'reading' | 'writing'
 
-const STEPS: Array<{ id: StepId; label: string }> = [
-  { id: 'searching', label: 'Searching the web' },
-  { id: 'reading', label: 'Reading sources' },
-  { id: 'writing', label: 'Writing answer' },
+const STEPS: Array<{ id: StepId; label: string; icon: ReactNode }> = [
+  { id: 'searching', label: 'Searching the web', icon: <MagnifyingGlass size={16} /> },
+  { id: 'reading', label: 'Reading sources', icon: <BookOpenText size={16} /> },
+  { id: 'writing', label: 'Writing answer', icon: <PencilLine size={16} /> },
 ]
 
 function StatusSteps({ phase, sourceCount }: { phase: Phase; sourceCount: number }) {
   const activeIdx = STEPS.findIndex((s) => s.id === phase)
   return (
-    <div className="status-card" role="status" aria-label="Search progress">
+    <div className="status-card rise" role="status" aria-label="Search progress">
       <ul className="status-list">
         {STEPS.map((step, i) => {
           const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending'
@@ -213,9 +223,9 @@ function StatusSteps({ phase, sourceCount }: { phase: Phase; sourceCount: number
                 {state === 'done' ? (
                   <Check size={16} weight="bold" />
                 ) : state === 'active' ? (
-                  <span className="pulse-dot" />
+                  <span className="step-live">{step.icon}</span>
                 ) : (
-                  <span className="hollow-dot" />
+                  step.icon
                 )}
               </span>
               {label}
@@ -266,7 +276,11 @@ function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: Com
           onClick={onSubmit}
           disabled={loading || !value.trim()}
         >
-          <ArrowRight size={18} weight="bold" />
+          {loading ? (
+            <SpinnerGap size={18} weight="bold" className="spin" />
+          ) : (
+            <ArrowRight size={18} weight="bold" />
+          )}
           {loading ? 'Asking...' : 'Ask'}
         </button>
       </div>
@@ -439,6 +453,7 @@ function App() {
         <p className="thread-label">Recent</p>
         {threads.length === 0 ? (
           <p className="thread-empty">
+            <Tray size={18} aria-hidden="true" />
             Threads you ask will appear here for this session.
           </p>
         ) : (
@@ -448,6 +463,9 @@ function App() {
                 key={t.id}
                 className={`thread-item${t.id === activeId ? ' active' : ''}`}
               >
+                <span className="thread-ico" aria-hidden="true">
+                  <ChatCircleText size={16} />
+                </span>
                 <button
                   type="button"
                   className="thread-open"
@@ -463,7 +481,7 @@ function App() {
                   onClick={() => deleteThread(t.id)}
                   aria-label={`Delete thread ${t.title}`}
                 >
-                  <X size={16} />
+                  <Trash size={15} />
                 </button>
               </li>
             ))}
@@ -495,12 +513,12 @@ function App() {
 
           {!asked && (
             <main className="hero">
-              <h1 className="hero-title">What do you want to know?</h1>
-              <p className="hero-sub">
+              <h1 className="hero-title rise">What do you want to know?</h1>
+              <p className="hero-sub rise rise-1">
                 Ask anything. Seekora searches the live web and writes an
                 answer with sources you can check.
               </p>
-              <form onSubmit={(e) => e.preventDefault()}>
+              <form onSubmit={(e) => e.preventDefault()} className="rise rise-2">
                 <Composer
                   value={query}
                   onChange={setQuery}
@@ -510,7 +528,7 @@ function App() {
                   hint="Press Enter to ask, Shift plus Enter for a new line"
                 />
               </form>
-              <ul className="suggest-list">
+              <ul className="suggest-list rise rise-3">
                 {SUGGESTIONS.map((s) => (
                   <li key={s}>
                     <button
@@ -521,7 +539,8 @@ function App() {
                         runAsk(s)
                       }}
                     >
-                      {s}
+                      <span className="suggest-text">{s}</span>
+                      <ArrowUpRight size={18} className="suggest-arrow" aria-hidden="true" />
                     </button>
                   </li>
                 ))}
@@ -544,13 +563,18 @@ function App() {
               {answer !== '' && (
                 <section className="answer-card rise" aria-label="Answer">
                   <div className="answer-head">
-                    <p className="answer-label">Answer</p>
+                    <p className="answer-label">
+                      <Sparkle size={15} aria-hidden="true" />
+                      Answer
+                    </p>
                     <button
                       type="button"
                       className="copy-button"
                       onClick={copyAnswer}
                     >
-                      {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
+                      <span key={String(copied)} className="copy-pop">
+                        {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
+                      </span>
                       {copied ? 'Copied' : 'Copy'}
                     </button>
                   </div>
@@ -569,7 +593,10 @@ function App() {
 
               {error && (
                 <div className="error-card" role="alert">
-                  <p>{error}</p>
+                  <p className="error-line">
+                    <WarningCircle size={18} aria-hidden="true" />
+                    <span>{error}</span>
+                  </p>
                   <button
                     type="button"
                     className="ask-button"
@@ -590,6 +617,7 @@ function App() {
                     aria-expanded={sourcesOpen}
                     aria-controls="sources-list"
                   >
+                    <Newspaper size={16} aria-hidden="true" />
                     <span className="sources-count">{sources.length}</span>
                     Sources
                     <CaretDown
@@ -600,11 +628,12 @@ function App() {
                   </button>
                   {sourcesOpen && (
                     <ol className="sources-list" id="sources-list">
-                      {sources.map((s) => (
+                      {sources.map((s, si) => (
                         <li
                           key={s.id ?? s.url}
                           id={`source-${s.id}`}
-                          className="source-card"
+                          className="source-card rise"
+                          style={{ animationDelay: `${Math.min(si, 5) * 60}ms` }}
                         >
                           <span className="source-num">{s.id}</span>
                           <div className="source-meta">
