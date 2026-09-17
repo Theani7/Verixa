@@ -5,6 +5,8 @@ Per build-with-exa skill:
   (query + type auto + contents highlights).
 - This app HAS its own chat LLM (ChatGroq via LangChain), so we give
   it /search results as context instead of calling /answer.
+- Follow-up questions are rewritten into standalone queries using the
+  thread history, so "how old is he" searches for the actual person.
 """
 
 import os
@@ -18,8 +20,8 @@ from verixa.search import web_search
 
 load_dotenv()
 
-# Model-native grounding markers (e.g. 【2†L1-L9】) that must become [2].
-NATIVE_CITATION_RE = re.compile(r"【(\d+)[†‡][^】]*】")
+# Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】).
+NATIVE_CITATION_RE = re.compile(r"【(\d+)(?:[†‡][^】]*)?】")
 
 SYSTEM_PROMPT = (
     "You are Verixa, a Perplexity-style research assistant. "
@@ -28,6 +30,16 @@ SYSTEM_PROMPT = (
     "Never use any other citation format: no 【】 brackets, no footnotes. "
     "If the sources don't contain the answer, say so clearly."
 )
+
+REWRITE_SYSTEM_PROMPT = (
+    "Rewrite the user's follow-up question as a standalone search query. "
+    "Resolve pronouns and references (he, she, it, they, this) using the "
+    "conversation. Keep names, dates, and constraints from the follow-up. "
+    "Return ONLY the rewritten query, no quotes, no explanation."
+)
+
+MAX_HISTORY_TURNS = 4
+HISTORY_ANSWER_CHARS = 1200
 
 
 def normalize_citations(text: str) -> str:
@@ -43,6 +55,38 @@ def get_llm() -> ChatGroq:
             "and add your key from https://console.groq.com."
         )
     return ChatGroq(model="openai/gpt-oss-120b", api_key=api_key)
+
+
+def format_history(history: list[dict]) -> str:
+    """Compact recent turns for prompts. Trimmed to respect token limits."""
+    blocks: list[str] = []
+    for turn in history[-MAX_HISTORY_TURNS:]:
+        q = str(turn.get("query") or "")[:300]
+        a = str(turn.get("answer") or "")[:HISTORY_ANSWER_CHARS]
+        if q:
+            blocks.append(f"User: {q}\nAssistant: {a}")
+    return "\n\n".join(blocks)
+
+
+def rewrite_query(query: str, history: list[dict], llm: ChatGroq) -> str:
+    """Resolve a follow-up against thread history into a standalone query."""
+    if not history:
+        return query
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", REWRITE_SYSTEM_PROMPT),
+            (
+                "human",
+                "Conversation so far:\n{history}\n\nFollow-up: {query}\n\nStandalone query:",
+            ),
+        ]
+    )
+    response = (prompt | llm).invoke(
+        {"history": format_history(history), "query": query}
+    )
+    content = response.content if isinstance(response.content, str) else ""
+    rewritten = content.strip().strip('"').strip()[:300]
+    return rewritten or query
 
 
 def build_context(result, max_results: int = 5) -> tuple[str, list[dict]]:
@@ -63,6 +107,7 @@ def build_answer_chain():
             ("system", SYSTEM_PROMPT),
             (
                 "human",
+                "Conversation so far (may be empty):\n{history}\n\n"
                 "Question: {query}\n\nWeb sources:\n{context}\n\n"
                 "Write a concise answer with inline citations. "
                 "Use Markdown (headings, bold, bullet lists) where it helps readability.",
@@ -72,12 +117,25 @@ def build_answer_chain():
     return prompt | get_llm()
 
 
-def answer_query(query: str) -> dict:
+def answer_query(query: str, history: list[dict] | None = None) -> dict:
     """Search Exa, then synthesize a cited answer with LangChain + Groq."""
-    result = web_search(query)
+    history = history or []
+    llm = get_llm()
+    standalone = rewrite_query(query, history, llm)
+    result = web_search(standalone)
     context, sources = build_context(result)
 
     chain = build_answer_chain()
-    response = chain.invoke({"query": query, "context": context})
+    response = chain.invoke(
+        {
+            "history": format_history(history),
+            "query": query,
+            "context": context,
+        }
+    )
     content = response.content if isinstance(response.content, str) else ""
-    return {"answer": normalize_citations(content), "sources": sources}
+    return {
+        "answer": normalize_citations(content),
+        "sources": sources,
+        "query": standalone,
+    }

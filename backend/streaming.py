@@ -2,6 +2,7 @@
 
 Event schema (one JSON object per SSE data frame):
 - {"type": "status", "phase": "searching" | "reading" | "writing"}
+- {"type": "rewrite", "query": "..."} (only when a follow-up was resolved)
 - {"type": "sources", "sources": [...]}
 - {"type": "token", "text": "..."}
 - {"type": "done"}
@@ -13,7 +14,13 @@ from collections.abc import AsyncIterator
 
 from starlette.concurrency import run_in_threadpool
 
-from backend.chain import build_answer_chain, build_context
+from backend.chain import (
+    build_answer_chain,
+    build_context,
+    format_history,
+    get_llm,
+    rewrite_query,
+)
 from verixa.search import web_search
 
 
@@ -25,10 +32,15 @@ def _status(phase: str) -> str:
     return _frame({"type": "status", "phase": phase})
 
 
-async def event_stream(query: str) -> AsyncIterator[str]:
+async def event_stream(query: str, history: list[dict] | None = None) -> AsyncIterator[str]:
+    history = history or []
     yield _status("searching")
     try:
-        result = await run_in_threadpool(web_search, query)
+        llm = get_llm()
+        standalone = await run_in_threadpool(rewrite_query, query, history, llm)
+        if standalone.strip().lower() != query.strip().lower():
+            yield _frame({"type": "rewrite", "query": standalone})
+        result = await run_in_threadpool(web_search, standalone)
     except Exception as exc:
         yield _frame({"type": "error", "message": f"Web search failed: {exc}"})
         return
@@ -40,7 +52,13 @@ async def event_stream(query: str) -> AsyncIterator[str]:
 
     try:
         chain = build_answer_chain()
-        async for chunk in chain.astream({"query": query, "context": context}):
+        async for chunk in chain.astream(
+            {
+                "history": format_history(history),
+                "query": query,
+                "context": context,
+            }
+        ):
             content = chunk.content
             if isinstance(content, str):
                 text = content

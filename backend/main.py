@@ -19,8 +19,14 @@ app.add_middleware(
 )
 
 
+class HistoryTurn(BaseModel):
+    query: str
+    answer: str = ""
+
+
 class AskRequest(BaseModel):
     query: str
+    history: list[HistoryTurn] = []
 
 
 @app.get("/api/health")
@@ -30,13 +36,13 @@ def health() -> dict:
 
 @app.post("/api/ask")
 def ask(req: AskRequest) -> dict:
-    return answer_query(req.query)
+    return answer_query(req.query, [t.model_dump() for t in req.history])
 
 
 @app.post("/api/ask/stream")
 def ask_stream(req: AskRequest) -> StreamingResponse:
     return StreamingResponse(
-        event_stream(req.query),
+        event_stream(req.query, [t.model_dump() for t in req.history]),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
