@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Source } from './types'
+import CodeBlock from './codeblock'
 
 export function hostnameOf(url: string): string {
   try {
@@ -112,7 +113,10 @@ export function renderRich(
 
   fenceSplit.forEach((chunk, fi) => {
     if (fi % 2 === 1) {
-      nodes.push(<pre key={`f-${key++}`}><code>{chunk.replace(/^\w+\n/, '')}</code></pre>)
+      const cut = chunk.indexOf('\n')
+      const language = cut === -1 ? '' : chunk.slice(0, cut)
+      const code = (cut === -1 ? chunk : chunk.slice(cut + 1)).replace(/\n$/, '')
+      nodes.push(<CodeBlock key={`f-${key++}`} language={language} code={code} />)
       return
     }
     const lines = chunk.split('\n')
