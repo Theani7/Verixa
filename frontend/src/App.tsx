@@ -88,11 +88,29 @@ function loadCollapsed(): boolean {
   }
 }
 
-const SUGGESTIONS: string[] = [
+const SUGGESTION_POOL: string[] = [
   'What are the latest developments in small modular nuclear reactors?',
   'How does retrieval augmented generation reduce hallucinations?',
   'What did the latest IPCC report say about methane emissions?',
+  'What is happening with the Artemis moon program?',
+  'How much sleep do adults actually need?',
+  'Why do central banks raise interest rates to fight inflation?',
+  'What is CRISPR and how is it used in medicine?',
+  'How does remittance shape the economy of Nepal?',
+  'What caused the fall of the Roman Empire?',
 ]
+
+function heroSuggestions(profile: Profile): string[] {
+  const day = Math.floor(Date.now() / 86400000)
+  const picked = [0, 1, 2].map(
+    (i) => SUGGESTION_POOL[(day + i) % SUGGESTION_POOL.length],
+  )
+  const place = profile.shareLocation ? profile.location.trim().slice(0, 60) : ''
+  if (place !== '') {
+    picked[2] = `What is happening in ${place} this week?`
+  }
+  return picked
+}
 
 type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'done'
 
@@ -1201,7 +1219,7 @@ function App() {
                 />
               </form>
               <ul className="suggest-list rise rise-3">
-                {SUGGESTIONS.map((s) => (
+                {heroSuggestions(profile).map((s) => (
                   <li key={s}>
                     <button
                       type="button"
