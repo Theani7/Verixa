@@ -1,5 +1,6 @@
 """FastAPI entrypoint for the Verixa Perplexity clone."""
 
+import re
 import uuid
 from contextlib import asynccontextmanager
 
@@ -95,12 +96,34 @@ class MemoryCreate(BaseModel):
     content: str = Field(min_length=1, max_length=1000)
 
 
+GENDERS = {"female", "male", "nonbinary", "prefer_not_to_say"}
+LENGTHS = {"short", "default", "long"}
+FORMATS = {"lists", "default", "paragraph"}
+DOB_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def _clean_profile(raw: dict) -> dict:
     if not isinstance(raw, dict):
         return {}
+
+    def text(key: str, limit: int) -> str:
+        return str(raw.get(key) or "").strip()[:limit]
+
+    gender = text("gender", 20).lower()
+    length = text("response_length", 10).lower() or "default"
+    fmt = text("response_format", 10).lower() or "default"
+    dob = text("dob", 10)
     return {
-        "name": str(raw.get("name") or "")[:100],
-        "instructions": str(raw.get("instructions") or "")[:2000],
+        "name": text("name", 100),
+        "instructions": text("instructions", 2000),
+        "occupation": text("occupation", 120),
+        "company": text("company", 120),
+        "dob": dob if DOB_RE.match(dob) else "",
+        "gender": gender if gender in GENDERS else "",
+        "share_location": bool(raw.get("share_location", False)),
+        "location": text("location", 120),
+        "response_length": length if length in LENGTHS else "default",
+        "response_format": fmt if fmt in FORMATS else "default",
     }
 
 

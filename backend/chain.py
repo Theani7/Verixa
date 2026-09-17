@@ -140,16 +140,64 @@ def load_memories(user_id, limit: int = 20) -> list[str]:
         return [row.content[:500] for row in rows]
 
 
+GENDER_LABELS = {
+    "female": "The user identifies as female. Use she/her unless told otherwise.",
+    "male": "The user identifies as male. Use he/him unless told otherwise.",
+    "nonbinary": "The user identifies as non-binary. Use they/them unless told otherwise.",
+}
+
+LENGTH_DIRECTIVES = {
+    "short": "Keep the answer short: a few sentences or one compact paragraph.",
+    "long": "Give a thorough answer with sections and detail.",
+}
+
+FORMAT_DIRECTIVES = {
+    "lists": "Prefer bullet or numbered lists over paragraphs where it fits.",
+    "paragraph": "Write in flowing paragraphs. Avoid bullet lists unless the user explicitly asks for them.",
+}
+
+
 def build_system_extra(profile: dict | None, memories: list[str]) -> str:
     parts: list[str] = []
-    name = str((profile or {}).get("name") or "").strip()[:100]
-    instructions = str((profile or {}).get("instructions") or "").strip()[:2000]
+    p = profile or {}
+
+    def text(key: str) -> str:
+        return str(p.get(key) or "").strip()
+
+    name = text("name")
+    instructions = text("instructions")
+    occupation = text("occupation")
+    company = text("company")
+    dob = text("dob")
+    gender = text("gender").lower()
+    location = text("location")
     if name:
         parts.append(f"The user goes by {name}.")
+    if occupation and company:
+        parts.append(f"The user works as {occupation} at {company}.")
+    elif occupation:
+        parts.append(f"The user works as {occupation}.")
+    elif company:
+        parts.append(f"The user works at {company}.")
+    if dob:
+        parts.append(f"The user was born on {dob}.")
+    if gender in GENDER_LABELS:
+        parts.append(GENDER_LABELS[gender])
     if instructions:
         parts.append(f"User preferences for answers: {instructions}")
     if memories:
         parts.append("Things to remember about the user:\n- " + "\n- ".join(memories))
+    length = text("response_length").lower()
+    if length in LENGTH_DIRECTIVES:
+        parts.append(LENGTH_DIRECTIVES[length])
+    fmt = text("response_format").lower()
+    if fmt in FORMAT_DIRECTIVES:
+        parts.append(FORMAT_DIRECTIVES[fmt])
+    if p.get("share_location") and location:
+        parts.append(
+            f"The user is in {location}. Prefer locally relevant results "
+            "when the question is location-sensitive."
+        )
     return "\n".join(parts)
 
 
