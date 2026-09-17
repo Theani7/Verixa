@@ -158,11 +158,32 @@ function loadProfile(): Profile {
   try {
     const raw = localStorage.getItem(PROFILE_KEY)
     if (!raw) return DEFAULT_PROFILE
-    const p = JSON.parse(raw) as Partial<Profile>
+    const p = JSON.parse(raw) as Partial<Profile> & Record<string, unknown>
+    const text = (key: keyof Profile, limit: number): string =>
+      typeof p[key] === 'string' ? (p[key] as string).slice(0, limit) : ''
     return {
-      name: typeof p.name === 'string' ? p.name.slice(0, 100) : '',
-      instructions:
-        typeof p.instructions === 'string' ? p.instructions.slice(0, 2000) : '',
+      name: text('name', 100),
+      instructions: text('instructions', 2000),
+      occupation: text('occupation', 120),
+      company: text('company', 120),
+      dob: /^\d{4}-\d{2}-\d{2}$/.test(text('dob', 10)) ? text('dob', 10) : '',
+      gender: ['female', 'male', 'nonbinary', 'prefer_not_to_say'].includes(
+        text('gender', 20).toLowerCase(),
+      )
+        ? text('gender', 20).toLowerCase()
+        : '',
+      shareLocation: p.shareLocation === true,
+      location: text('location', 120),
+      responseLength: (['short', 'long'] as const).includes(
+        text('responseLength', 10).toLowerCase() as 'short' | 'long',
+      )
+        ? (text('responseLength', 10).toLowerCase() as 'short' | 'long')
+        : 'default',
+      responseFormat: (['lists', 'paragraph'] as const).includes(
+        text('responseFormat', 10).toLowerCase() as 'lists' | 'paragraph',
+      )
+        ? (text('responseFormat', 10).toLowerCase() as 'lists' | 'paragraph')
+        : 'default',
     }
   } catch {
     return DEFAULT_PROFILE
