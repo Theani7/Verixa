@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
   ArrowClockwise,
@@ -13,9 +13,11 @@ import {
   List,
   MagnifyingGlass,
   Newspaper,
+  SidebarSimple,
   PencilLine,
   Plus,
   ShareNetwork,
+  SignIn,
   SignOut,
   Sparkle,
   SpinnerGap,
@@ -42,6 +44,49 @@ const STORAGE_KEY = 'verixa.threads.v1'
 const AUTH_KEY = 'verixa.auth.v1'
 const LEGACY_STORAGE_KEY = 'seekora.threads.v1'
 const MAX_THREADS = 30
+const SIDEBAR_KEY = 'verixa.sidebar.v1'
+
+interface ThreadGroup {
+  label: string
+  items: Thread[]
+}
+
+function groupThreads(all: Thread[], filter: string): ThreadGroup[] {
+  const q = filter.trim().toLowerCase()
+  const list =
+    q === ''
+      ? all
+      : all.filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            t.turns.some((turn) => turn.query.toLowerCase().includes(q)),
+        )
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const startMs = start.getTime()
+  const day = 24 * 60 * 60 * 1000
+  const groups: ThreadGroup[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'Previous 7 days', items: [] },
+    { label: 'Older', items: [] },
+  ]
+  for (const t of list) {
+    if (t.ts >= startMs) groups[0].items.push(t)
+    else if (t.ts >= startMs - day) groups[1].items.push(t)
+    else if (t.ts >= startMs - 7 * day) groups[2].items.push(t)
+    else groups[3].items.push(t)
+  }
+  return groups.filter((g) => g.items.length > 0)
+}
+
+function loadCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === 'collapsed'
+  } catch {
+    return false
+  }
+}
 
 const SUGGESTIONS: string[] = [
   'What are the latest developments in small modular nuclear reactors?',
@@ -356,6 +401,9 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [threadFilter, setThreadFilter] = useState('')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [session, setSession] = useState<Session | null>(loadSession)
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -382,6 +430,30 @@ function App() {
       /* ignore */
     }
   }, [prefs])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? 'collapsed' : 'open')
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    function onSlash(e: KeyboardEvent): void {
+      if (e.key !== '/' || sidebarCollapsed) return
+      const el = e.target as HTMLElement | null
+      if (!el) return
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) {
+        return
+      }
+      if (el.closest('.modal')) return
+      e.preventDefault()
+      searchRef.current?.focus()
+    }
+    window.addEventListener('keydown', onSlash)
+    return () => window.removeEventListener('keydown', onSlash)
+  }, [sidebarCollapsed])
 
   useEffect(() => {
     try {
@@ -722,53 +794,108 @@ function App() {
     )
   }
 
+  const groups = groupThreads(threads, threadFilter)
+  const visibleCount = groups.reduce((n, g) => n + g.items.length, 0)
+
+  function renderThreadItem(t: Thread): ReactNode {
+    return (
+      <li
+        key={t.id}
+        className={`thread-item${t.id === activeId ? ' active' : ''}`}
+      >
+        <span className="thread-ico" aria-hidden="true">
+          <ChatCircleText size={16} />
+        </span>
+        <button
+          type="button"
+          className="thread-open"
+          onClick={() => openThread(t.id)}
+          aria-current={t.id === activeId ? 'true' : undefined}
+          title={t.turns[0]?.query ?? t.title}
+        >
+          {t.title}
+        </button>
+        <button
+          type="button"
+          className="thread-delete"
+          onClick={() => deleteThread(t.id)}
+          aria-label={`Delete thread ${t.title}`}
+        >
+          <Trash size={15} />
+        </button>
+      </li>
+    )
+  }
+
   return (
-    <div className={`app${sidebarOpen ? ' sidebar-open' : ''}`}>
+    <div
+      className={`app${sidebarOpen ? ' sidebar-open' : ''}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
+    >
       <aside className="sidebar" aria-label="Threads">
         <div className="brand-row">
           <span className="brand-mark" aria-hidden="true">V</span>
           <span className="brand">Verixa</span>
+          <button
+            type="button"
+            className="rail-toggle"
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            aria-expanded={!sidebarCollapsed}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <SidebarSimple size={18} />
+          </button>
         </div>
-        <button type="button" className="new-thread" onClick={reset}>
+        <button
+          type="button"
+          className="new-thread"
+          onClick={reset}
+          title={sidebarCollapsed ? 'New thread' : undefined}
+        >
           <Plus size={18} weight="bold" />
-          New thread
+          <span className="new-thread-label">New thread</span>
         </button>
-        <p className="thread-label">Recent</p>
+        <div className="thread-search">
+          <MagnifyingGlass size={16} aria-hidden="true" />
+          <label className="visually-hidden" htmlFor="thread-filter">
+            Search threads
+          </label>
+          <input
+            ref={searchRef}
+            id="thread-filter"
+            type="search"
+            value={threadFilter}
+            onChange={(e) => setThreadFilter(e.target.value)}
+            placeholder="Search threads"
+            autoComplete="off"
+          />
+          <kbd aria-hidden="true">/</kbd>
+        </div>
         {threads.length === 0 ? (
           <p className="thread-empty">
             <Tray size={18} aria-hidden="true" />
             Threads you ask will appear here for this session.
           </p>
+        ) : visibleCount === 0 ? (
+          <p className="thread-empty">No threads match your search.</p>
         ) : (
-          <ul className="thread-list">
-            {threads.map((t) => (
-              <li
-                key={t.id}
-                className={`thread-item${t.id === activeId ? ' active' : ''}`}
-              >
-                <span className="thread-ico" aria-hidden="true">
-                  <ChatCircleText size={16} />
-                </span>
-                <button
-                  type="button"
-                  className="thread-open"
-                  onClick={() => openThread(t.id)}
-                  aria-current={t.id === activeId ? 'true' : undefined}
-                  title={t.turns[0]?.query ?? t.title}
-                >
-                  {t.title}
-                </button>
-                <button
-                  type="button"
-                  className="thread-delete"
-                  onClick={() => deleteThread(t.id)}
-                  aria-label={`Delete thread ${t.title}`}
-                >
-                  <Trash size={15} />
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            {threadFilter.trim() !== '' && (
+              <p className="search-count" role="status">
+                {visibleCount} of {threads.length}
+              </p>
+            )}
+            <div className="thread-scroll">
+              {groups.map((g) => (
+                <section key={g.label} aria-label={g.label}>
+                  <p className="thread-label">{g.label}</p>
+                  <ul className="thread-list">
+                    {g.items.map((t) => renderThreadItem(t))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </>
         )}
         <div className="auth-block">
           {session ? (
@@ -847,13 +974,24 @@ function App() {
               )}
             </div>
           ) : (
-            <button
-              type="button"
-              className="sign-in"
-              onClick={() => setAuthModal('signin')}
-            >
-              Sign in
-            </button>
+            <>
+              <button
+                type="button"
+                className="sign-in"
+                onClick={() => setAuthModal('signin')}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className="sign-in-icon"
+                onClick={() => setAuthModal('signin')}
+                aria-label="Sign in"
+                title="Sign in"
+              >
+                <SignIn size={18} />
+              </button>
+            </>
           )}
         </div>
         <p className="sidebar-foot">Live web answers with cited sources.</p>
