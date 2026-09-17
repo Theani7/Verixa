@@ -1,0 +1,78 @@
+# Seekora
+
+A Perplexity-style answer engine. Ask anything: Seekora searches the live web
+with [Exa](https://exa.ai), synthesizes a cited answer with LangChain + Groq,
+and streams it token by token into a dark, minimal React UI.
+
+## Features
+
+- Live web retrieval via the Exa `/search` endpoint (query + highlights)
+- Cited answers synthesized by Groq through LangChain
+- Token streaming over SSE with search progress steps
+  (searching, reading sources, writing)
+- Numbered citation chips linked to collapsible source cards
+- Thread sidebar with history persisted in the browser
+- Markdown answers, copy button, follow-up composer docked at the bottom
+
+## Stack
+
+- Backend: FastAPI, LangChain, `langchain-groq`, `exa-py`
+- Frontend: React 19, Vite, Phosphor icons, native CSS (no UI framework)
+
+## Prerequisites
+
+- Python 3.12+
+- Node 20+
+- An [Exa API key](https://exa.ai) and a
+  [Groq API key](https://console.groq.com)
+
+## Setup
+
+```bash
+# Backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # then fill in EXA_API_KEY and GROQ_API_KEY
+```
+
+`.env` is git-ignored and never committed.
+
+## Run
+
+```bash
+# Backend (http://localhost:8000)
+source .venv/bin/activate
+uvicorn backend.main:app --reload --port 8000
+
+# Frontend (http://localhost:5173) — new terminal
+cd frontend && npm install && npm run dev
+```
+
+API docs are served at http://localhost:8000/docs while the backend runs.
+
+## API
+
+| Method | Path             | Description                                  |
+| ------ | ---------------- | -------------------------------------------- |
+| GET    | `/api/health`    | Health check                                 |
+| POST   | `/api/ask`       | Full JSON answer: `{ answer, sources }`      |
+| POST   | `/api/ask/stream`| SSE stream: `status`, `sources`, `token`, `done`, `error` events |
+
+## Project layout
+
+```
+backend/        FastAPI app, LangChain chain, SSE streaming
+seekora/        Exa web-search tool (recommended /search request shape)
+frontend/       Vite + React answer-engine UI
+```
+
+## Notes
+
+- Retrieval follows the canonical Exa request shape: query plus
+  `type: "auto"` plus bare `contents: { highlights: true }`, with no extra
+  filters. The app has its own chat LLM, so it uses `/search` as context
+  instead of the `/answer` endpoint.
+- Model-native citation markers (e.g. `【2†L1-L9】`) are normalized to
+  `[n]` chips on both the backend and the streaming frontend.
+- Thread history lives in `localStorage` under `seekora.threads.v1`.
