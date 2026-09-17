@@ -130,7 +130,45 @@ function renderRich(text) {
   return nodes
 }
 
+const STEPS = [
+  { id: 'searching', label: 'Searching the web' },
+  { id: 'reading', label: 'Reading sources' },
+  { id: 'writing', label: 'Writing answer' },
+]
+
+function StatusSteps({ phase, sourceCount }) {
+  const activeIdx = STEPS.findIndex((s) => s.id === phase)
+  return (
+    <div className="status-card" role="status" aria-label="Search progress">
+      <ul className="status-list">
+        {STEPS.map((step, i) => {
+          const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending'
+          const label =
+            step.id === 'reading' && sourceCount > 0
+              ? `Reading ${sourceCount} sources`
+              : step.label
+          return (
+            <li key={step.id} className={`status-row ${state}`}>
+              <span className="step-icon" aria-hidden="true">
+                {state === 'done' ? (
+                  <Check size={16} weight="bold" />
+                ) : state === 'active' ? (
+                  <span className="pulse-dot" />
+                ) : (
+                  <span className="hollow-dot" />
+                )}
+              </span>
+              {label}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function Composer({ value, onChange, onSubmit, loading, placeholder, hint }) {
+
   function onKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -174,11 +212,14 @@ function App() {
   const [asked, setAsked] = useState('')
   const [answer, setAnswer] = useState('')
   const [sources, setSources] = useState([])
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [phase, setPhase] = useState('idle')
+
+  const loading =
+    phase === 'searching' || phase === 'reading' || phase === 'writing'
 
   useEffect(() => {
     saveThreads(threads)
@@ -190,10 +231,32 @@ function App() {
     return () => clearTimeout(t)
   }, [copied])
 
+  function persistThread(q, nextAnswer, nextSources) {
+    setThreads((prev) => {
+      if (activeId) {
+        return prev.map((t) =>
+          t.id === activeId
+            ? { ...t, query: q, answer: nextAnswer, sources: nextSources, ts: Date.now() }
+            : t,
+        )
+      }
+      const thread = {
+        id: newId(),
+        title: q.length > 60 ? `${q.slice(0, 60)}...` : q,
+        query: q,
+        answer: nextAnswer,
+        sources: nextSources,
+        ts: Date.now(),
+      }
+      setActiveId(thread.id)
+      return [thread, ...prev]
+    })
+  }
+
   async function runAsk(text) {
     const q = (text ?? query).trim()
     if (!q || loading) return
-    setLoading(true)
+    setPhase('searching')
     setError('')
     setAnswer('')
     setSources([])
@@ -201,39 +264,50 @@ function App() {
     setQuery('')
     setCopied(false)
     setSourcesOpen(false)
+    let full = ''
+    let seenSources = []
     try {
-      const res = await fetch(`${API_URL}/api/ask`, {
+      const res = await fetch(`${API_URL}/api/ask/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: q }),
       })
       if (!res.ok) throw new Error(`The answer engine returned status ${res.status}.`)
-      const data = await res.json()
-      const nextAnswer = data.answer ?? ''
-      const nextSources = data.sources ?? []
-      setAnswer(nextAnswer)
-      setSources(nextSources)
-      setThreads((prev) => {
-        if (activeId) {
-          return prev.map((t) =>
-            t.id === activeId ? { ...t, query: q, answer: nextAnswer, sources: nextSources, ts: Date.now() } : t,
-          )
+      if (!res.body) throw new Error('Streaming is not supported in this browser.')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let idx
+        while ((idx = buf.indexOf('\n\n')) !== -1) {
+          const frame = buf.slice(0, idx)
+          buf = buf.slice(idx + 2)
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const e = JSON.parse(line.slice(6))
+            if (e.type === 'status') {
+              setPhase(e.phase)
+            } else if (e.type === 'sources') {
+              seenSources = e.sources ?? []
+              setSources(seenSources)
+            } else if (e.type === 'token') {
+              full += e.text
+              setAnswer(full)
+            } else if (e.type === 'done') {
+              persistThread(q, full, seenSources)
+              setPhase('done')
+            } else if (e.type === 'error') {
+              throw new Error(e.message)
+            }
+          }
         }
-        const thread = {
-          id: newId(),
-          title: q.length > 60 ? `${q.slice(0, 60)}...` : q,
-          query: q,
-          answer: nextAnswer,
-          sources: nextSources,
-          ts: Date.now(),
-        }
-        setActiveId(thread.id)
-        return [thread, ...prev]
-      })
+      }
     } catch (err) {
       setError(err.message ?? 'Something went wrong while asking.')
-    } finally {
-      setLoading(false)
+      setPhase('done')
     }
   }
 
@@ -249,6 +323,7 @@ function App() {
     setCopied(false)
     setSourcesOpen(false)
     setSidebarOpen(false)
+    setPhase('done')
   }
 
   function deleteThread(id) {
@@ -266,6 +341,7 @@ function App() {
     setCopied(false)
     setSourcesOpen(false)
     setSidebarOpen(false)
+    setPhase('idle')
   }
 
   async function copyAnswer() {
@@ -277,7 +353,7 @@ function App() {
     }
   }
 
-  const hasResult = asked !== '' && !loading && !error && answer !== ''
+  const streaming = answer !== '' && phase !== 'done'
 
   return (
     <div className={`app${sidebarOpen ? ' sidebar-open' : ''}`}>
@@ -384,17 +460,41 @@ function App() {
           )}
 
           {asked && (
-            <main aria-live="polite" aria-busy={loading} className="thread">
+            <main
+              aria-live={phase === 'done' ? 'polite' : 'off'}
+              aria-busy={loading}
+              className="thread"
+            >
               <h1 className="query-title">{asked}</h1>
 
               {loading && (
-                <div className="answer-card" role="status" aria-label="Searching the web">
-                  <p className="answer-label">Answer</p>
-                  <div className="skel skel-line" style={{ width: '92%' }} />
-                  <div className="skel skel-line" style={{ width: '98%' }} />
-                  <div className="skel skel-line" style={{ width: '84%' }} />
-                  <div className="skel skel-line" style={{ width: '60%' }} />
-                </div>
+                <StatusSteps phase={phase} sourceCount={sources.length} />
+              )}
+
+              {answer !== '' && (
+                <section className="answer-card rise" aria-label="Answer">
+                  <div className="answer-head">
+                    <p className="answer-label">Answer</p>
+                    <button
+                      type="button"
+                      className="copy-button"
+                      onClick={copyAnswer}
+                    >
+                      {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="answer-body">
+                    {streaming ? (
+                      <p className="stream-text">
+                        {answer}
+                        <span className="stream-caret" aria-hidden="true" />
+                      </p>
+                    ) : (
+                      renderRich(answer)
+                    )}
+                  </div>
+                </section>
               )}
 
               {error && (
@@ -411,25 +511,8 @@ function App() {
                 </div>
               )}
 
-              {hasResult && (
-                <>
-                  <section className="answer-card rise" aria-label="Answer">
-                    <div className="answer-head">
-                      <p className="answer-label">Answer</p>
-                      <button
-                        type="button"
-                        className="copy-button"
-                        onClick={copyAnswer}
-                      >
-                        {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
-                        {copied ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                    <div className="answer-body">{renderRich(answer)}</div>
-                  </section>
-
-                  {sources.length > 0 && (
-                    <section className="rise rise-1" aria-label="Sources">
+              {sources.length > 0 && phase === 'done' && (
+                <section className="rise rise-1" aria-label="Sources">
                       <button
                         type="button"
                         className="sources-toggle"
@@ -485,16 +568,16 @@ function App() {
                     </section>
                   )}
 
-                  <button
-                    type="button"
-                    className="new-question rise rise-2"
-                    onClick={reset}
-                  >
-                    <ArrowClockwise size={18} />
-                    New question
-                  </button>
-                </>
-              )}
+                  {phase === 'done' && (
+                    <button
+                      type="button"
+                      className="new-question rise rise-2"
+                      onClick={reset}
+                    >
+                      <ArrowClockwise size={18} />
+                      New question
+                    </button>
+                  )}
 
               <div className="composer-dock">
                 <form onSubmit={(e) => e.preventDefault()}>

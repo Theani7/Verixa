@@ -683,29 +683,103 @@
   transform: scale(0.98);
 }
 
-/* Loading skeleton */
+/* Search progress steps */
 
-.skel {
-  border-radius: var(--r-sm);
-  background: linear-gradient(
-    100deg,
-    rgba(255, 255, 255, 0.05) 40%,
-    rgba(255, 255, 255, 0.11) 50%,
-    rgba(255, 255, 255, 0.05) 60%
-  );
-  background-size: 200% 100%;
-  animation: skel-shimmer 1200ms var(--ease) infinite;
+.status-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  padding: 8px 16px;
+  margin-bottom: 16px;
 }
 
-@keyframes skel-shimmer {
-  to {
-    background-position: -200% 0;
+.status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 8px 0;
+}
+
+.status-row.pending {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.status-row + .status-row {
+  border-top: 1px solid var(--border);
+}
+
+.step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  animation: pulse-dot 1200ms var(--ease) infinite;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
   }
 }
 
-.skel-line {
-  height: 15px;
-  margin-bottom: 10px;
+.hollow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid var(--faint);
+}
+
+/* Streaming caret */
+
+.stream-text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 9px;
+  height: 1.1em;
+  margin-left: 3px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: caret-blink 1000ms steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 /* Error */
