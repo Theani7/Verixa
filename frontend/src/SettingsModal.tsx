@@ -75,6 +75,7 @@ function AccountPane({
   const [next, setNext] = useState('')
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [pwBusy, setPwBusy] = useState(false)
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -243,9 +244,35 @@ function AccountPane({
       </form>
 
       <h4 className="settings-sub">Session</h4>
-      <button type="button" className="settings-button ghost" onClick={onSignOut}>
-        Sign out
-      </button>
+      {!confirmingSignOut ? (
+        <button
+          type="button"
+          className="settings-button ghost"
+          onClick={() => setConfirmingSignOut(true)}
+        >
+          Sign out
+        </button>
+      ) : (
+        <div className="danger-box">
+          <p>Sign out of {session.email}?</p>
+          <div className="danger-actions">
+            <button
+              type="button"
+              className="settings-button ghost"
+              onClick={() => setConfirmingSignOut(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="settings-button"
+              onClick={onSignOut}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
 
       <h4 className="settings-sub danger">Delete account</h4>
       {!confirmingDelete ? (
