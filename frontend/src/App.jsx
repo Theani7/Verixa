@@ -198,6 +198,7 @@ function App() {
     setAnswer('')
     setSources([])
     setAsked(q)
+    setQuery('')
     setCopied(false)
     setSourcesOpen(false)
     try {
@@ -240,7 +241,7 @@ function App() {
     const t = threads.find((x) => x.id === id)
     if (!t) return
     setActiveId(t.id)
-    setQuery(t.query)
+    setQuery('')
     setAsked(t.query)
     setAnswer(t.answer)
     setSources(t.sources)
