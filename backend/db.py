@@ -31,6 +31,13 @@ def init_db() -> None:
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        # Added after launch; harmless on fresh databases.
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120) DEFAULT ''"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(30)"))
+        conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users (username)")
+        )
 
 
 @contextmanager

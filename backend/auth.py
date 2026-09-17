@@ -18,10 +18,15 @@ MIN_PASSWORD = 8
 MAX_PASSWORD = 72
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
 
 
 def valid_email(email: str) -> bool:
     return bool(EMAIL_RE.match(email.strip()))
+
+
+def valid_username(username: str) -> bool:
+    return bool(USERNAME_RE.match(username))
 
 
 def valid_password(password: str) -> bool:

@@ -1,8 +1,7 @@
-"""Core tables: accounts-ready users, threads, and vector memory.
+"""Core tables: users, threads, and vector memory.
 
-users and memories are unused by the API today; they are the foundation
-for the accounts and semantic-memory features, so the schema already
-carries user ownership from the start.
+Threads carry user ownership so accounts own their data; memories back the
+per-user memory feature with pgvector ready for semantic recall.
 """
 
 import uuid
@@ -30,6 +29,10 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    full_name: Mapped[str] = mapped_column(String(120), default="")
+    username: Mapped[str | None] = mapped_column(
+        String(30), unique=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

@@ -6,6 +6,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 
 from backend.auth import (
     check_password,
@@ -14,6 +15,7 @@ from backend.auth import (
     user_id_from_header,
     valid_email,
     valid_password,
+    valid_username,
 )
 from backend.chain import answer_query
 from backend.db import init_db, session_scope
@@ -70,7 +72,14 @@ class AuthResponse(BaseModel):
 class MeResponse(BaseModel):
     id: str
     email: str
+    full_name: str
+    username: str
     created_at: str
+
+
+class ProfileUpdate(BaseModel):
+    full_name: str = Field(default="", max_length=120)
+    username: str = Field(default="", max_length=30)
 
 
 class PasswordChange(BaseModel):
@@ -225,11 +234,51 @@ def login(req: AuthRequest) -> dict:
 @app.get("/api/me", response_model=MeResponse)
 def me(authorization: str | None = Header(default=None)) -> dict:
     user = _require_user(authorization)
+    return _me_dict(user)
+
+
+def _me_dict(user) -> dict:
     return {
         "id": str(user.id),
         "email": user.email,
+        "full_name": user.full_name or "",
+        "username": user.username or "",
         "created_at": user.created_at.isoformat(),
     }
+
+
+@app.put("/api/me", response_model=MeResponse)
+def update_me(
+    req: ProfileUpdate,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = _require_user(authorization)
+    username = req.username.strip()
+    if username and not valid_username(username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be 3 to 20 letters, numbers, or underscores.",
+        )
+    with session_scope() as session:
+        row = session.get(User, user.id)
+        if row is None:
+            raise HTTPException(status_code=401, detail="Sign in required.")
+        if username:
+            taken = (
+                session.query(User)
+                .filter(func.lower(User.username) == username.lower(), User.id != row.id)
+                .first()
+            )
+            if taken is not None:
+                raise HTTPException(
+                    status_code=409, detail="That username is already taken."
+                )
+            row.username = username
+        else:
+            row.username = None
+        row.full_name = req.full_name.strip()[:120]
+        session.flush()
+        return _me_dict(row)
 
 
 @app.put("/api/auth/password")
