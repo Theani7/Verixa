@@ -604,4 +604,4 @@ Exa and Groq are external services with usage limits and pricing. Search volume,
 
 ## License
 
-No license file is included in this repository. Add an explicit license before distributing or deploying the project publicly if reuse terms are required.
+Verixa is licensed under the [MIT License](LICENSE). See the license file for the full terms and disclaimer.
