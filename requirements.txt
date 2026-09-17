@@ -1,2 +1,6 @@
 exa-py>=1.0.0
 python-dotenv>=1.0.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+langchain-core>=0.3.0
+langchain-groq>=0.2.0
