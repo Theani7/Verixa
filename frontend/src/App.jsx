@@ -383,18 +383,7 @@ function App() {
           )}
 
           {asked && (
-            <main aria-live="polite" aria-busy={loading}>
-              <form onSubmit={(e) => e.preventDefault()}>
-                <Composer
-                  value={query}
-                  onChange={setQuery}
-                  onSubmit={() => runAsk()}
-                  loading={loading}
-                  placeholder="Ask a follow-up..."
-                  hint="Press Enter to ask, Shift plus Enter for a new line"
-                />
-              </form>
-
+            <main aria-live="polite" aria-busy={loading} className="thread">
               <h1 className="query-title">{asked}</h1>
 
               {loading && (
@@ -505,6 +494,19 @@ function App() {
                   </button>
                 </>
               )}
+
+              <div className="composer-dock">
+                <form onSubmit={(e) => e.preventDefault()}>
+                  <Composer
+                    value={query}
+                    onChange={setQuery}
+                    onSubmit={() => runAsk()}
+                    loading={loading}
+                    placeholder="Ask a follow-up..."
+                    hint="Press Enter to ask, Shift plus Enter for a new line"
+                  />
+                </form>
+              </div>
             </main>
           )}
 

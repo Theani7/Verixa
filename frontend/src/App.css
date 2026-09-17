@@ -348,6 +348,11 @@
 
 /* Results */
 
+.thread {
+  display: flex;
+  flex-direction: column;
+}
+
 .query-title {
   font-size: 24px;
   font-weight: 600;
@@ -355,6 +360,16 @@
   color: var(--ink);
   margin: 20px 0 16px;
   letter-spacing: -0.01em;
+}
+
+/* Bottom dock keeps the composer visible like a chat input. */
+.composer-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 16px;
+  padding: 12px 0 4px;
+  background: linear-gradient(transparent, var(--bg) 32%);
 }
 
 .rise {
