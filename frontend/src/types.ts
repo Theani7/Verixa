@@ -9,11 +9,15 @@ export interface Turn {
   query: string
   answer: string
   sources: Source[]
-  mode: 'search' | 'chat'
+  mode: 'search' | 'chat' | 'deep'
   searchedQuery: string
   durationMs: number
   related: string[]
 }
+
+export type AskMode = 'search' | 'deep'
+
+export const MODE_KEY = 'verixa.mode.v1'
 
 export interface Thread {
   id: string

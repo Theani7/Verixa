@@ -8,6 +8,7 @@ import {
   ChatCircleText,
   Check,
   Copy,
+  Flask,
   GearSix,
   GlobeHemisphereWest,
   List,
@@ -32,13 +33,22 @@ import { SourceList } from './article'
 import { faviconFor, hostnameOf, renderRich } from './markdown'
 import AuthModal from './AuthModal'
 import SettingsModal from './SettingsModal'
-import type { Prefs, Profile, Source, Thread, Turn } from './types'
+import type { AskMode, Prefs, Profile, Source, Thread, Turn } from './types'
 import {
   DEFAULT_PREFS,
   DEFAULT_PROFILE,
+  MODE_KEY,
   PREFS_KEY,
   PROFILE_KEY,
 } from './types'
+
+function loadAskMode(): AskMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'deep' ? 'deep' : 'search'
+  } catch {
+    return 'search'
+  }
+}
 
 const STORAGE_KEY = 'verixa.threads.v1'
 const AUTH_KEY = 'verixa.auth.v1'
@@ -112,11 +122,12 @@ function heroSuggestions(profile: Profile): string[] {
   return picked
 }
 
-type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'done'
+type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'researching' | 'done'
 
 type StreamEvent =
   | { type: 'status'; phase: Phase }
-  | { type: 'mode'; mode: Turn['mode'] }
+  | { type: 'mode'; mode: 'search' | 'chat' }
+  | { type: 'progress'; label: string }
   | { type: 'rewrite'; query: string }
   | { type: 'related'; questions: string[] }
   | { type: 'sources'; sources: Source[] }
@@ -155,7 +166,7 @@ function normalizeThread(value: unknown): Thread | null {
           query: typeof x.query === 'string' ? x.query : '',
           answer: typeof x.answer === 'string' ? x.answer : '',
           sources,
-          mode: x.mode === 'chat' ? ('chat' as const) : ('search' as const),
+          mode: x.mode === 'chat' ? ('chat' as const) : x.mode === 'deep' ? ('deep' as const) : ('search' as const),
           searchedQuery: typeof x.searchedQuery === 'string' ? x.searchedQuery : '',
           durationMs: typeof x.durationMs === 'number' ? x.durationMs : 0,
           related: Array.isArray(x.related)
@@ -314,10 +325,12 @@ function StatusSteps({
   phase,
   sourceCount,
   resolved,
+  steps,
 }: {
   phase: Phase
   sourceCount: number
   resolved: string
+  steps: string[]
 }) {
   if (phase === 'thinking') {
     return (
@@ -331,6 +344,32 @@ function StatusSteps({
             </span>
             Thinking...
           </li>
+        </ul>
+      </div>
+    )
+  }
+  if (phase === 'researching') {
+    const rows = steps.length > 0 ? steps : ['Starting deep research']
+    return (
+      <div className="status-card rise" role="status" aria-label="Research progress">
+        <ul className="status-list">
+          {rows.map((label, i) => {
+            const last = i === rows.length - 1
+            return (
+              <li key={`${i}-${label}`} className={`status-row ${last ? 'active' : 'done'}`}>
+                <span className="step-icon" aria-hidden="true">
+                  {last ? (
+                    <span className="step-live">
+                      <MagnifyingGlass size={16} />
+                    </span>
+                  ) : (
+                    <Check size={16} weight="bold" />
+                  )}
+                </span>
+                {label}
+              </li>
+            )
+          })}
         </ul>
       </div>
     )
@@ -375,9 +414,41 @@ interface ComposerProps {
   loading: boolean
   placeholder: string
   hint: string
+  mode: AskMode
+  onMode: (mode: AskMode) => void
 }
 
-function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: ComposerProps) {
+const MODES: Array<{
+  id: AskMode
+  label: string
+  desc: string
+  icon: ReactNode
+}> = [
+  {
+    id: 'search',
+    label: 'Search',
+    desc: 'Fast answers with live sources',
+    icon: <GlobeHemisphereWest size={18} />,
+  },
+  {
+    id: 'deep',
+    label: 'Deep research',
+    desc: 'Multi-step research that takes longer',
+    icon: <Flask size={18} />,
+  },
+]
+
+function Composer({
+  value,
+  onChange,
+  onSubmit,
+  loading,
+  placeholder,
+  hint,
+  mode,
+  onMode,
+}: ComposerProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -385,6 +456,13 @@ function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: Com
       onSubmit()
     }
   }
+
+  function pick(next: AskMode): void {
+    onMode(next)
+    setMenuOpen(false)
+  }
+
+  const current = MODES.find((m) => m.id === mode) ?? MODES[0]
 
   return (
     <div className="composer">
@@ -400,6 +478,56 @@ function Composer({ value, onChange, onSubmit, loading, placeholder, hint }: Com
         rows={2}
       />
       <div className="composer-row">
+        <div className="mode-wrap">
+          <button
+            type="button"
+            className="mode-button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-haspopup="listbox"
+            aria-label={`Answer mode: ${current.label}`}
+            title="Answer mode"
+          >
+            {current.icon}
+            {current.label}
+          </button>
+          {menuOpen && (
+            <>
+              <button
+                type="button"
+                className="menu-backdrop"
+                aria-label="Close mode menu"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div
+                className="mode-menu"
+                role="listbox"
+                aria-label="Answer mode"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setMenuOpen(false)
+                }}
+              >
+                {MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="option"
+                    aria-selected={mode === m.id}
+                    className={`mode-option${mode === m.id ? ' active' : ''}`}
+                    onClick={() => pick(m.id)}
+                  >
+                    {m.icon}
+                    <span className="mode-text">
+                      <span className="mode-name">{m.label}</span>
+                      <span className="mode-desc">{m.desc}</span>
+                    </span>
+                    {mode === m.id && <Check size={16} weight="bold" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <span className="composer-hint">{hint}</span>
         <button
           type="button"
@@ -445,12 +573,15 @@ function App() {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const [prefs] = useState<Prefs>(loadPrefs)
   const [profile, setProfile] = useState<Profile>(loadProfile)
+  const [askMode, setAskMode] = useState<AskMode>(loadAskMode)
+  const [steps, setSteps] = useState<string[]>([])
 
   const loading =
     phase === 'searching' ||
     phase === 'reading' ||
     phase === 'writing' ||
-    phase === 'thinking'
+    phase === 'thinking' ||
+    phase === 'researching'
   const inThread = turns.length > 0 || asked !== ''
 
   useEffect(() => {
@@ -464,6 +595,14 @@ function App() {
       /* ignore */
     }
   }, [prefs])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, askMode)
+    } catch {
+      /* ignore */
+    }
+  }, [askMode])
 
   useEffect(() => {
     try {
@@ -565,6 +704,7 @@ function App() {
     setAnswer('')
     setSources([])
     setRelated([])
+    setSteps([])
     setPhase('done')
   }
 
@@ -581,6 +721,8 @@ function App() {
     setOpenSources(null)
     setResolvedQuery('')
     setRelated([])
+    setSteps([])
+    setSteps([])
     const history = turns.slice(-4).map((t) => ({
       query: t.query,
       answer: t.answer.slice(0, 2000),
@@ -588,7 +730,7 @@ function App() {
     let full = ''
     let seenSources: Source[] = []
     let seenRelated: string[] = []
-    let mode: Turn['mode'] = 'search'
+    let mode: Turn['mode'] = askMode
     let standalone = q
     const started = Date.now()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -598,6 +740,7 @@ function App() {
       history,
       num_results: prefs.numResults,
       profile,
+      mode: askMode,
     })
     try {
       if (!prefs.stream) {
@@ -619,6 +762,7 @@ function App() {
           ? data.sources.filter(isSource)
           : []
         if (data.mode === 'chat') mode = 'chat'
+        else if (data.mode === 'deep') mode = 'deep'
         if (typeof data.query === 'string' && data.query.trim() !== '') {
           standalone = data.query
         }
@@ -657,7 +801,9 @@ function App() {
             if (e.type === 'status') {
               setPhase(e.phase)
             } else if (e.type === 'mode') {
-              mode = e.mode
+              if (e.mode === 'chat') mode = 'chat'
+            } else if (e.type === 'progress') {
+              setSteps((prev) => [...prev.slice(-9), e.label])
             } else if (e.type === 'rewrite') {
               standalone = e.query
               setResolvedQuery(e.query)
@@ -708,6 +854,7 @@ function App() {
     setOpenSources(null)
     setResolvedQuery('')
     setRelated([])
+    setSteps([])
     setSidebarOpen(false)
     setPhase('done')
   }
@@ -779,6 +926,7 @@ function App() {
     setOpenSources(null)
     setResolvedQuery('')
     setRelated([])
+    setSteps([])
     setSidebarOpen(false)
     setShareState('idle')
     setPhase('idle')
@@ -1214,6 +1362,8 @@ function App() {
                   onChange={setQuery}
                   onSubmit={() => runAsk()}
                   loading={loading}
+                  mode={askMode}
+                  onMode={setAskMode}
                   placeholder="Ask anything..."
                   hint="Press Enter to ask, Shift plus Enter for a new line"
                 />
@@ -1259,6 +1409,20 @@ function App() {
                         </span>
                       </div>
                     )}
+                    {turn.mode === 'deep' && (
+                      <div className="turn-meta">
+                        <span className="deep-badge">
+                          <Flask size={14} aria-hidden="true" />
+                          Deep research
+                        </span>
+                        {turn.durationMs > 0 && (
+                          <span className="researched">
+                            <Timer size={14} aria-hidden="true" />
+                            Researched {formatSecs(turn.durationMs)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {turn.mode === 'search' &&
                       searchingLine(turn.query, turn.searchedQuery)}
                     {answerBody(key, turn.answer, false, turn.sources)}
@@ -1282,7 +1446,17 @@ function App() {
                       phase={phase}
                       sourceCount={sources.length}
                       resolved={resolvedQuery}
+                      steps={steps}
                     />
+                  )}
+
+                  {steps.length > 0 && (
+                    <div className="turn-meta">
+                      <span className="deep-badge">
+                        <Flask size={14} aria-hidden="true" />
+                        Deep research
+                      </span>
+                    </div>
                   )}
 
                   {answer !== '' &&
@@ -1322,6 +1496,8 @@ function App() {
                     onChange={setQuery}
                     onSubmit={() => runAsk()}
                     loading={loading}
+                    mode={askMode}
+                    onMode={setAskMode}
                     placeholder={turns.length > 0 ? 'Ask a follow-up...' : 'Ask anything...'}
                     hint="Press Enter to ask, Shift plus Enter for a new line"
                   />

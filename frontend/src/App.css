@@ -424,6 +424,104 @@
   color: var(--faint);
 }
 
+.mode-wrap {
+  position: relative;
+}
+
+.mode-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.mode-button:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.mode-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 21;
+  width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-elevated);
+  padding: 6px;
+  animation: modal-in var(--dur-base) var(--ease) both;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.mode-option:hover {
+  background: var(--surface-2);
+}
+
+.mode-option.active {
+  color: var(--ink);
+}
+
+.mode-option > svg:last-child {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mode-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mode-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.mode-desc {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.deep-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
 .ask-button {
   display: inline-flex;
   align-items: center;

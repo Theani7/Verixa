@@ -10,6 +10,8 @@ and streams it token by token into a dark, minimal React UI.
 - Cited answers synthesized by Groq through LangChain
 - Token streaming over SSE with search progress steps
   (searching, reading sources, writing)
+- Deep research mode: planned multi-search loop with reflect and refine
+  steps, picked from the composer like a model switcher
 - Numbered citation chips linked to collapsible source cards
 - Related follow-up questions generated per answer, one click to ask
 - Thread sidebar with history persisted in the browser
