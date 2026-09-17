@@ -902,12 +902,18 @@ function App() {
             <div className="profile-wrap">
               <button
                 type="button"
-                className="avatar"
+                className="profile-button"
                 onClick={() => setProfileMenu((v) => !v)}
                 aria-expanded={profileMenu}
                 aria-label={`Account menu for ${session.email}`}
+                title={session.email}
               >
-                {((session.full_name || session.email).charAt(0) || '?').toUpperCase()}
+                <span className="avatar avatar-sm" aria-hidden="true">
+                  {((session.full_name || session.email).charAt(0) || '?').toUpperCase()}
+                </span>
+                <span className="profile-name">
+                  {session.full_name || session.username || session.email}
+                </span>
               </button>
               {profileMenu && (
                 <>
@@ -994,7 +1000,6 @@ function App() {
             </>
           )}
         </div>
-        <p className="sidebar-foot">Live web answers with cited sources.</p>
       </aside>
       <button
         type="button"

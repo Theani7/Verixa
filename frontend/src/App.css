@@ -281,12 +281,39 @@
   color: var(--danger);
 }
 
-.sidebar-foot {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--faint);
-  padding: 8px;
-  margin: 0;
+.profile-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.profile-button:hover {
+  background: var(--surface);
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.profile-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
 .backdrop {
@@ -1314,8 +1341,16 @@
   .app.sidebar-collapsed .thread-scroll,
   .app.sidebar-collapsed .thread-empty,
   .app.sidebar-collapsed .search-count,
-  .app.sidebar-collapsed .sidebar-foot,
   .app.sidebar-collapsed .sign-in {
+    display: none;
+  }
+
+  .app.sidebar-collapsed .profile-button {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app.sidebar-collapsed .profile-name {
     display: none;
   }
 
