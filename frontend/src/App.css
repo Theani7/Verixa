@@ -69,7 +69,7 @@
 
 .new-thread:hover {
   border-color: var(--accent);
-  background: rgba(181, 86, 36, 0.14);
+  background: rgba(236, 235, 229, 0.08);
 }
 
 .new-thread:active {

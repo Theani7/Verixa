@@ -11,10 +11,10 @@
   --muted: rgba(232, 231, 225, 0.6);
   --faint: rgba(232, 231, 225, 0.38);
   --border: rgba(255, 255, 255, 0.09);
-  --accent: #b55624;
-  --accent-hover: #9c4a1f;
-  --on-accent: #ffffff;
-  --focus: #f0a35e;
+  --accent: #ecebe5;
+  --accent-hover: #ffffff;
+  --on-accent: #191a1a;
+  --focus: #ffffff;
   --danger: #f28b82;
 
   --r-sm: 6px;
@@ -93,7 +93,8 @@ button:disabled {
 }
 
 ::selection {
-  background: rgba(181, 86, 36, 0.45);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
