@@ -40,6 +40,29 @@ REWRITE_SYSTEM_PROMPT = (
     "Return ONLY the rewritten query, no quotes, no explanation."
 )
 
+CHAT_SYSTEM_PROMPT = (
+    "You are Verixa, a friendly AI chatbot. Answer conversationally from "
+    "your own knowledge and the conversation so far. Do not invent citations "
+    "or source numbers. If the user asks about something you cannot know "
+    "without the live web, say what you can and offer to search for it."
+)
+
+ROUTE_SYSTEM_PROMPT = (
+    "Classify the user's message. Reply with exactly one word. Reply SEARCH "
+    "when answering needs live web search, fresh information, or external "
+    "facts beyond the conversation. Reply CHAT for greetings, thanks, "
+    "goodbyes, small talk, creative writing, opinions, math, explanations "
+    "of general knowledge, and follow-ups answerable from the conversation "
+    "alone."
+)
+
+SMALLTALK_RE = re.compile(
+    r"^(hi|hii+|hello|hey+|yo|namaste|thanks|thank you|thx|dhanyabad|"
+    r"bye|goodbye|good morning|good afternoon|good evening|good night)"
+    r"[\s!.]*$",
+    re.IGNORECASE,
+)
+
 MAX_HISTORY_TURNS = 4
 HISTORY_ANSWER_CHARS = 1200
 
@@ -89,6 +112,46 @@ def rewrite_query(query: str, history: list[dict], llm: ChatGroq) -> str:
     content = response.content if isinstance(response.content, str) else ""
     rewritten = content.strip().strip('"').strip()[:300]
     return rewritten or query
+
+
+def route_message(query: str, history: list[dict], llm) -> str:
+    """Return "chat" when no web search is needed, else "search"."""
+    if SMALLTALK_RE.match(query.strip()):
+        return "chat"
+    try:
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", ROUTE_SYSTEM_PROMPT),
+                (
+                    "human",
+                    "Conversation so far:\n{history}\n\nMessage: {query}",
+                ),
+            ]
+        )
+        response = (prompt | llm).invoke(
+            {"history": format_history(history), "query": query[:500]}
+        )
+        content = response.content if isinstance(response.content, str) else ""
+        return "chat" if "CHAT" in content.upper() else "search"
+    except Exception:
+        return "search"
+
+
+def build_chat_chain(system_extra: str = ""):
+    """Direct conversational answers: no search, no citations."""
+    system = CHAT_SYSTEM_PROMPT
+    if system_extra.strip():
+        system += "\n" + system_extra.strip()[:2000]
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system),
+            (
+                "human",
+                "Conversation so far (may be empty):\n{history}\n\nMessage: {query}",
+            ),
+        ]
+    )
+    return prompt | get_llm()
 
 
 def build_context(result, max_results: int = DEFAULT_RESULTS) -> tuple[str, list[dict]]:
@@ -303,12 +366,22 @@ def answer_query(
     history = history or []
     count = num_results or DEFAULT_RESULTS
     llm = get_llm()
+    memories, auto_learn = load_memory_context(user_id)
+    extra = build_system_extra(profile, memories)
+
+    if route_message(query, history, llm) == "chat":
+        response = build_chat_chain(extra).invoke(
+            {"history": format_history(history), "query": query}
+        )
+        content = response.content if isinstance(response.content, str) else ""
+        maybe_learn_memories(user_id, query, content, llm, auto_learn)
+        return {"answer": content, "sources": [], "query": query, "mode": "chat"}
+
     standalone = rewrite_query(query, history, llm)
     result = web_search(standalone, num_results=count)
     context, sources = build_context(result, max_results=count)
 
-    memories, auto_learn = load_memory_context(user_id)
-    chain = build_answer_chain(build_system_extra(profile, memories))
+    chain = build_answer_chain(extra)
     response = chain.invoke(
         {
             "history": format_history(history),
@@ -322,4 +395,5 @@ def answer_query(
         "answer": normalize_citations(content),
         "sources": sources,
         "query": standalone,
+        "mode": "search",
     }
