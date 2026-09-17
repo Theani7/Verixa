@@ -7,7 +7,16 @@ export interface Session {
   token: string
   id: string
   email: string
-  created_at?: string
+  full_name: string
+  username: string
+}
+
+export interface Me {
+  id: string
+  email: string
+  full_name: string
+  username: string
+  created_at: string
 }
 
 export interface Memory {
@@ -78,8 +87,21 @@ function isSession(value: unknown): value is Session {
   return (
     typeof s.token === 'string' &&
     typeof s.id === 'string' &&
-    typeof s.email === 'string'
+    typeof s.email === 'string' &&
+    (s.full_name === undefined || typeof s.full_name === 'string') &&
+    (s.username === undefined || typeof s.username === 'string')
   )
+}
+
+function withProfileDefaults(s: Session): Session {
+  const r = s as unknown as Record<string, unknown>
+  return {
+    token: s.token,
+    id: s.id,
+    email: s.email,
+    full_name: typeof r.full_name === 'string' ? r.full_name : '',
+    username: typeof r.username === 'string' ? r.username : '',
+  }
 }
 
 export async function signup(email: string, password: string): Promise<Session> {
@@ -89,7 +111,7 @@ export async function signup(email: string, password: string): Promise<Session> 
     body: JSON.stringify({ email, password }),
   })
   if (!isSession(data)) throw new Error('Sign up returned an invalid response.')
-  return data
+  return withProfileDefaults(data)
 }
 
 export async function login(email: string, password: string): Promise<Session> {
@@ -99,10 +121,10 @@ export async function login(email: string, password: string): Promise<Session> {
     body: JSON.stringify({ email, password }),
   })
   if (!isSession(data)) throw new Error('Sign in returned an invalid response.')
-  return data
+  return withProfileDefaults(data)
 }
 
-export async function fetchMe(token: string): Promise<{ id: string; email: string; created_at: string }> {
+export async function fetchMe(token: string): Promise<Me> {
   const data = await request('/api/me', {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -111,11 +133,33 @@ export async function fetchMe(token: string): Promise<{ id: string; email: strin
     data === null ||
     typeof (data as Record<string, unknown>).id !== 'string' ||
     typeof (data as Record<string, unknown>).email !== 'string' ||
+    typeof (data as Record<string, unknown>).full_name !== 'string' ||
+    typeof (data as Record<string, unknown>).username !== 'string' ||
     typeof (data as Record<string, unknown>).created_at !== 'string'
   ) {
     throw new Error('Session is invalid.')
   }
-  return data as { id: string; email: string; created_at: string }
+  return data as Me
+}
+
+export async function updateProfile(
+  token: string,
+  profile: { full_name: string; username: string },
+): Promise<Me> {
+  const data = await request('/api/me', {
+    method: 'PUT',
+    headers: authHeaders(token),
+    body: JSON.stringify(profile),
+  })
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    typeof (data as Record<string, unknown>).full_name !== 'string' ||
+    typeof (data as Record<string, unknown>).username !== 'string'
+  ) {
+    throw new Error('Profile update returned an invalid response.')
+  }
+  return data as Me
 }
 
 export async function changePassword(

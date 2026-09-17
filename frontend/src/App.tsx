@@ -129,7 +129,14 @@ function loadSession(): Session | null {
     ) {
       return null
     }
-    return parsed as Session
+    const p = parsed as Record<string, unknown>
+    return {
+      token: p.token as string,
+      id: typeof p.id === 'string' ? p.id : '',
+      email: p.email as string,
+      full_name: typeof p.full_name === 'string' ? p.full_name : '',
+      username: typeof p.username === 'string' ? p.username : '',
+    }
   } catch {
     return null
   }
@@ -529,6 +536,19 @@ function App() {
     }
   }
 
+  function handleProfileSaved(me: { full_name: string; username: string }): void {
+    setSession((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, full_name: me.full_name, username: me.username }
+      try {
+        localStorage.setItem(AUTH_KEY, JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
+
   function signOut(): void {
     setSession(null)
     try {
@@ -726,7 +746,7 @@ function App() {
                 aria-expanded={profileMenu}
                 aria-label={`Account menu for ${session.email}`}
               >
-                {(session.email.charAt(0) || '?').toUpperCase()}
+                {((session.full_name || session.email).charAt(0) || '?').toUpperCase()}
               </button>
               {profileMenu && (
                 <>
@@ -958,6 +978,7 @@ function App() {
             signOut()
             setSettingsOpen(false)
           }}
+          onProfileSaved={handleProfileSaved}
           onAccountDeleted={handleAccountDeleted}
           onOpenAuth={() => {
             setSettingsOpen(false)

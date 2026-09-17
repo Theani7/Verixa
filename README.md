@@ -86,12 +86,13 @@ existing local threads for your account.
 ## Settings
 
 The profile menu (avatar, bottom of the sidebar) opens Settings with four
-sections. Account shows your email and join date, changes the password,
-signs out, or deletes the account with everything in it. Preferences tunes
-results per search (3, 5, or 10) and answer delivery (stream live or all at
-once). Personalization stores your name and response instructions on the
-device and sends them with every question. Memory keeps facts Verixa should
-remember; signed-in users get them injected into every answer.
+sections. Account edits your full name and username, shows your login email
+(read-only) and join date, changes the password, signs out, deletes the
+account with everything in it, and links to GitHub support. Preferences
+tunes results per search (3, 5, or 10) and answer delivery (stream live or
+all at once). Personalization stores your name and response instructions on
+the device and sends them with every question. Memory keeps facts Verixa
+should remember; signed-in users get them injected into every answer.
 
 ## Sharing
 

@@ -67,6 +67,8 @@ class AuthResponse(BaseModel):
     token: str
     id: str
     email: str
+    full_name: str = ""
+    username: str = ""
 
 
 class MeResponse(BaseModel):

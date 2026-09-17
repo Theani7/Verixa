@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
+  ArrowSquareOut,
   Brain,
   SlidersHorizontal,
   Sparkle,
@@ -15,9 +16,12 @@ import {
   deleteMemory,
   fetchMe,
   listMemories,
+  updateProfile,
 } from './api'
 import type { Memory, Session } from './api'
 import type { Prefs, Profile } from './types'
+
+const SUPPORT_URL = 'https://github.com/Theani7/Verixa/issues'
 
 type Category = 'account' | 'preferences' | 'personalization' | 'memory'
 
@@ -52,15 +56,21 @@ function SignInPrompt({ onOpenAuth }: { onOpenAuth: () => void }) {
 function AccountPane({
   session,
   onSignOut,
+  onProfileSaved,
   onAccountDeleted,
   onOpenAuth,
 }: {
   session: Session | null
   onSignOut: () => void
+  onProfileSaved: (me: { full_name: string; username: string }) => void
   onAccountDeleted: () => void
   onOpenAuth: () => void
 }) {
-  const [memberSince, setMemberSince] = useState(session?.created_at ?? '')
+  const [memberSince, setMemberSince] = useState('')
+  const [fullName, setFullName] = useState(session?.full_name ?? '')
+  const [username, setUsername] = useState(session?.username ?? '')
+  const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [profileBusy, setProfileBusy] = useState(false)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -78,6 +88,30 @@ function AccountPane({
 
   const token = session?.token ?? ''
   if (!session) return <SignInPrompt onOpenAuth={onOpenAuth} />
+
+  async function submitProfile(e: FormEvent): Promise<void> {
+    e.preventDefault()
+    if (profileBusy) return
+    setProfileMsg(null)
+    setProfileBusy(true)
+    try {
+      const me = await updateProfile(token, {
+        full_name: fullName.trim(),
+        username: username.trim(),
+      })
+      setFullName(me.full_name)
+      setUsername(me.username)
+      onProfileSaved({ full_name: me.full_name, username: me.username })
+      setProfileMsg({ ok: true, text: 'Profile saved.' })
+    } catch (err) {
+      setProfileMsg({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Could not save profile.',
+      })
+    } finally {
+      setProfileBusy(false)
+    }
+  }
 
   async function submitPassword(e: FormEvent): Promise<void> {
     e.preventDefault()
@@ -114,16 +148,64 @@ function AccountPane({
 
   return (
     <div>
+      <form onSubmit={submitProfile}>
+        <div className="field">
+          <label htmlFor="settings-fullname">Full name</label>
+          <input
+            id="settings-fullname"
+            type="text"
+            autoComplete="name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Asha Sharma"
+            maxLength={120}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="settings-username">Username</label>
+          <input
+            id="settings-username"
+            type="text"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="asha_s"
+            maxLength={30}
+          />
+          <p className="field-hint">3 to 20 letters, numbers, or underscores.</p>
+        </div>
+        {profileMsg && (
+          <p className={profileMsg.ok ? 'settings-ok' : 'auth-error'} role="status">
+            {profileMsg.text}
+          </p>
+        )}
+        <button type="submit" className="settings-button" disabled={profileBusy}>
+          {profileBusy ? 'Saving...' : 'Save profile'}
+        </button>
+      </form>
+
+      <h4 className="settings-sub">Email</h4>
       <div className="settings-row">
-        <span className="settings-key">Email</span>
         <span className="settings-value">{session.email}</span>
       </div>
+      <p className="settings-lead">Email cannot be changed.</p>
       {memberSince !== '' && (
         <div className="settings-row">
           <span className="settings-key">Member since</span>
           <span className="settings-value">{formatDate(memberSince)}</span>
         </div>
       )}
+
+      <h4 className="settings-sub">Support</h4>
+      <a
+        className="support-link"
+        href={SUPPORT_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Get help on GitHub
+        <ArrowSquareOut size={16} aria-hidden="true" />
+      </a>
 
       <h4 className="settings-sub">Change password</h4>
       <form onSubmit={submitPassword}>
@@ -410,6 +492,7 @@ export default function SettingsModal({
   onProfile,
   onClose,
   onSignOut,
+  onProfileSaved,
   onAccountDeleted,
   onOpenAuth,
 }: {
@@ -420,6 +503,7 @@ export default function SettingsModal({
   onProfile: (profile: Profile) => void
   onClose: () => void
   onSignOut: () => void
+  onProfileSaved: (me: { full_name: string; username: string }) => void
   onAccountDeleted: () => void
   onOpenAuth: () => void
 }) {
@@ -479,6 +563,7 @@ export default function SettingsModal({
               <AccountPane
                 session={session}
                 onSignOut={onSignOut}
+                onProfileSaved={onProfileSaved}
                 onAccountDeleted={onAccountDeleted}
                 onOpenAuth={onOpenAuth}
               />
