@@ -30,8 +30,10 @@ from backend.chain import (
     MAX_SOURCES,
     build_deep_answer_chain,
     build_system_extra,
+    fit_context,
     format_history,
     get_llm,
+    is_rate_limit_error,
     load_memory_context,
     maybe_learn_memories,
     normalize_citations,
@@ -226,16 +228,21 @@ def merge_results(
         picked.append(entry)
     blocks: list[str] = []
     sources: list[dict] = []
+    # Tiered evidence budget: top-ranked sources keep long evidence, the
+    # tail gets compact blocks. Keeps deep context inside Groq's free-tier
+    # TPM window (see fit_context) instead of one flat 2400-char cap that
+    # can blow past 8000 tokens/minute.
     for i, entry in enumerate(picked, start=1):
         url = entry["url"]
         evidence = entry["text"] or "\n".join(entry["highlights"][:3])
         if not entry["text"] and url in texts:
             evidence = texts[url][:DEEP_FULLTEXT_CHARS] or evidence
+        per_cap = 2600 if i <= DEEP_TEXT_FETCH_TOP else 800
         excerpt = (entry["highlights"][0] if entry["highlights"] else evidence)[:220]
         sources.append({"id": i, "title": entry["title"], "url": url, "excerpt": excerpt})
         date_line = f"\nPublished: {entry['date']}" if entry["date"] else ""
         blocks.append(
-            f"[{i}] {entry['title']}\nURL: {url}{date_line}\n{evidence[:DEEP_CHAR_CAP * 2]}"
+            f"[{i}] {entry['title']}\nURL: {url}{date_line}\n{evidence[:per_cap]}"
         )
     return "\n\n".join(blocks), sources
 
@@ -350,6 +357,28 @@ def verify_report(
     return report
 
 
+def _invoke_with_retry(chain, payload: dict, llm, attempts: int = 3):
+    """Invoke a chain; on Groq 413/TPM errors shrink context and retry.
+
+    Free-tier TPM (8000 for gpt-oss-120b) can reject a deep-research
+    request even after fit_context() when history/memory inflate the
+    prompt. Each retry halves the context so the answer still ships.
+    """
+    payload = dict(payload)
+    for attempt in range(3):
+        try:
+            return chain.invoke(payload)
+        except Exception as exc:
+            if not is_rate_limit_error(exc) or attempt == 2:
+                raise
+            current_tokens = len(payload.get("context") or "") // 4
+            payload["context"] = fit_context(
+                payload.get("context", ""),
+                token_budget=max(1000, current_tokens // 2),
+            )
+    raise RuntimeError("unreachable")
+
+
 def synthesize_report(
     query: str,
     history_text: str,
@@ -366,11 +395,14 @@ def synthesize_report(
     extract+verify pass gates publishing so the streamed answer is the
     verified final text.
     """
-    draft = build_deep_answer_chain(extra).invoke(
-        {"history": history_text, "query": query, "context": context}
+    safe_context = fit_context(context)
+    draft = _invoke_with_retry(
+        build_deep_answer_chain(extra),
+        {"history": history_text, "query": query, "context": safe_context},
+        llm,
     )
     text = draft.content if isinstance(draft.content, str) else ""
-    report = verify_report(query, context, text, llm, sources)
+    report = verify_report(query, safe_context, text, llm, sources)
     metrics = dict(report.to_metrics())
     bad = [r for r in report.results if needs_rewrite(r)]
     if not bad:
@@ -382,11 +414,13 @@ def synthesize_report(
             pass
     feedback = rewrite_feedback(report.results)
     metrics["claims_rewritten"] = len(bad)
-    fixed = build_deep_answer_chain(extra, draft_feedback=feedback).invoke(
-        {"history": history_text, "query": query, "context": context}
+    fixed = _invoke_with_retry(
+        build_deep_answer_chain(extra, draft_feedback=feedback),
+        {"history": history_text, "query": query, "context": safe_context},
+        llm,
     )
     final = fixed.content if isinstance(fixed.content, str) else ""
-    final_report = verify_report(query, context, final or text, llm, sources)
+    final_report = verify_report(query, safe_context, final or text, llm, sources)
     final_metrics = final_report.to_metrics()
     final_metrics["claims_rewritten"] = len(bad)
     # Publish the rewrite only if it did not get worse; otherwise keep

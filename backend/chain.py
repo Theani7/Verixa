@@ -30,6 +30,76 @@ DEEP_PER_SEARCH = 5
 DEEP_CHAR_CAP = 1200
 MAX_SOURCES = 20
 
+# Groq on-demand TPM limit (free tier = 8000 for gpt-oss-120b). The ask /
+# deep-report call reserves headroom for the system prompt, history, and
+# output; the rest is the context budget. Set GROQ_TPM_LIMIT higher
+# (e.g. 60000 on the Dev Tier) to let deep research use its full budget.
+GROQ_TPM_LIMIT = int(os.getenv("GROQ_TPM_LIMIT", "8000"))
+CONTEXT_TOKEN_BUDGET = max(2000, GROQ_TPM_LIMIT - 3000)
+_CHARS_PER_TOKEN = 4
+
+
+def fit_context(context: str, token_budget: int | None = None) -> str:
+    """Trim the source context to stay under the Groq TPM window.
+
+    Drops the lowest-priority [n] blocks (highest numbers = lowest rank)
+    first, so citations stay valid and the strongest sources survive
+    intact. If even the remaining blocks are too big, each block is
+    truncated proportionally until it fits.
+    """
+    if not context:
+        return context
+    budget_tokens = token_budget or max(1500, GROQ_TPM_LIMIT - 3000)
+    if len(context) <= budget_tokens * _CHARS_PER_TOKEN:
+        return context
+    parts = re.split(r"(?=\n\n\[\d+\] )", "\n\n" + context)
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    # Pass 1: drop tail blocks (lowest-ranked sources) while over budget.
+    kept: list[str] = []
+    used = 0
+    for part in parts:
+        cost = len(part) // _CHARS_PER_TOKEN + 8
+        if kept and used + cost > budget_tokens:
+            break
+        kept.append(part)
+        used += cost
+    trimmed = "".join(kept).strip()
+    # Pass 2: still over? Halve every block until it fits.
+    for _ in range(6):
+        if _estimate_tokens(trimmed) <= budget_tokens or "\n\n[" not in trimmed:
+            break
+        trimmed = _shrink_blocks(trimmed)
+    return trimmed
+
+
+def _estimate_tokens(text: str) -> int:
+    return len(text or "") // _CHARS_PER_TOKEN
+
+
+def _shrink_blocks(context: str) -> str:
+    halves = []
+    for block in re.split(r"(?=\n\n\[\d+\] )", "\n\n" + context):
+        if block.startswith("\n\n"):
+            block = block[2:]
+        halves.append(block[: max(200, len(block) // 2)])
+    return "".join(halves)
+
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    """True when an LLM call failed with a Groq 413 / TPM error."""
+    text = str(exc)
+    return "413" in text or "rate_limit_exceeded" in text or "TPM" in text
+
+
+# Deep research budgets: many small parallel searches stay inside token limits
+# where one giant context would overflow them.
+DEEP_SUBQUERIES = 8
+DEEP_FOLLOWUPS = 4
+DEEP_PER_SEARCH = 5
+DEEP_CHAR_CAP = 1200
+MAX_SOURCES = 20
+
 # Model-native grounding markers (e.g. 【2†L1-L9】 or bare 【1】).
 NATIVE_CITATION_RE = re.compile(r"【(\d+)(?:[†‡][^】]*)?】")
 

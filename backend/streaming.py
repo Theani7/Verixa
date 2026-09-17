@@ -21,6 +21,7 @@ from backend.chain import (
     build_context,
     build_deep_answer_chain,
     build_system_extra,
+    fit_context,
     format_history,
     get_llm,
     load_memory_context,
@@ -160,11 +161,12 @@ async def event_stream(
             yield _frame(
                 {"type": "progress", "label": "Drafting the report"}
             )
+            safe_context = fit_context(context)
             chain = build_deep_answer_chain(extra)
             draft_text = ""
             async for text in _stream_text(
                 chain,
-                {"history": history_text, "query": query, "context": context},
+                {"history": history_text, "query": query, "context": safe_context},
             ):
                 draft_text += text
             # Claim-level verify-then-publish: extract claims, batch-verify
@@ -174,7 +176,7 @@ async def event_stream(
             yield _frame({"type": "progress", "label": "Extracting claims"})
             try:
                 report = await run_in_threadpool(
-                    verify_report, query, context, draft_text, llm, sources
+                    verify_report, query, safe_context, draft_text, llm, sources
                 )
             except Exception:
                 report = None
@@ -195,13 +197,13 @@ async def event_stream(
                 full_text = ""
                 async for text in _stream_text(
                     chain,
-                    {"history": history_text, "query": query, "context": context},
+                    {"history": history_text, "query": query, "context": safe_context},
                 ):
                     full_text += text
                 yield _frame({"type": "progress", "label": "Final verification"})
                 try:
                     final_report = await run_in_threadpool(
-                        verify_report, query, context, full_text, llm, sources
+                        verify_report, query, safe_context, full_text, llm, sources
                     )
                 except Exception:
                     final_report = None
