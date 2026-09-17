@@ -56,6 +56,7 @@ class AskRequest(BaseModel):
     num_results: int | None = Field(default=None, ge=1, le=10)
     profile: dict = Field(default_factory=dict)
     mode: Literal["search", "deep"] = "search"
+    incognito: bool = False
 
 
 class ThreadSave(BaseModel):
@@ -154,7 +155,7 @@ def ask(
     req: AskRequest,
     authorization: str | None = Header(default=None),
 ) -> dict:
-    user_id = user_id_from_header(authorization)
+    user_id = None if req.incognito else user_id_from_header(authorization)
     if req.mode == "deep":
         from backend.deep import deep_answer
 
@@ -163,6 +164,7 @@ def ask(
             [t.model_dump() for t in req.history],
             profile=_clean_profile(req.profile),
             user_id=user_id,
+            incognito=req.incognito,
         )
     return answer_query(
         req.query,
@@ -170,6 +172,7 @@ def ask(
         profile=_clean_profile(req.profile),
         num_results=req.num_results,
         user_id=user_id,
+        incognito=req.incognito,
     )
 
 
@@ -184,8 +187,9 @@ def ask_stream(
             [t.model_dump() for t in req.history],
             profile=_clean_profile(req.profile),
             num_results=req.num_results,
-            user_id=user_id_from_header(authorization),
+            user_id=None if req.incognito else user_id_from_header(authorization),
             mode=req.mode,
+            incognito=req.incognito,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

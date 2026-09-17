@@ -78,6 +78,7 @@ async def event_stream(
     num_results: int | None = None,
     user_id=None,
     mode: str = "search",
+    incognito: bool = False,
 ) -> AsyncIterator[str]:
     history = history or []
     count = num_results or DEFAULT_RESULTS
@@ -91,9 +92,13 @@ async def event_stream(
     if mode == "deep":
         yield _status("researching")
         try:
-            memories, auto_learn = await run_in_threadpool(
-                load_memory_context, user_id
-            )
+            if incognito:
+                # Privacy mode: no personalization, no memory learning.
+                memories, auto_learn = [], False
+            else:
+                memories, auto_learn = await run_in_threadpool(
+                    load_memory_context, user_id
+                )
             extra = build_system_extra(profile, memories)
             history_text = format_history(history)
             yield _frame({"type": "progress", "label": "Planning research angles"})
@@ -176,7 +181,13 @@ async def event_stream(
             yield _frame({"type": "progress", "label": "Extracting claims"})
             try:
                 report = await run_in_threadpool(
-                    verify_report, query, safe_context, draft_text, llm, sources
+                    verify_report,
+                    query,
+                    safe_context,
+                    draft_text,
+                    llm,
+                    sources,
+                    incognito,
                 )
             except Exception:
                 report = None
@@ -203,7 +214,13 @@ async def event_stream(
                 yield _frame({"type": "progress", "label": "Final verification"})
                 try:
                     final_report = await run_in_threadpool(
-                        verify_report, query, safe_context, full_text, llm, sources
+                        verify_report,
+                        query,
+                        safe_context,
+                        full_text,
+                        llm,
+                        sources,
+                        incognito,
                     )
                 except Exception:
                     final_report = None
@@ -235,9 +252,12 @@ async def event_stream(
         yield _status("thinking")
         yield _frame({"type": "mode", "mode": "chat"})
         try:
-            memories, auto_learn = await run_in_threadpool(
-                load_memory_context, user_id
-            )
+            if incognito:
+                memories, auto_learn = [], False
+            else:
+                memories, auto_learn = await run_in_threadpool(
+                    load_memory_context, user_id
+                )
             chain = build_chat_chain(build_system_extra(profile, memories))
             full_text = ""
             async for text in _stream_text(
@@ -276,7 +296,10 @@ async def event_stream(
     yield _status("writing")
 
     try:
-        memories, auto_learn = await run_in_threadpool(load_memory_context, user_id)
+        if incognito:
+            memories, auto_learn = [], False
+        else:
+            memories, auto_learn = await run_in_threadpool(load_memory_context, user_id)
         chain = build_answer_chain(build_system_extra(profile, memories))
         full_text = ""
         async for text in _stream_text(

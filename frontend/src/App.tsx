@@ -21,6 +21,7 @@ import {
   ShareNetwork,
   SignIn,
   SignOut,
+  EyeSlash,
   Sparkle,
   SpinnerGap,
   Square,
@@ -278,6 +279,16 @@ function loadProfile(): Profile {
     }
   } catch {
     return DEFAULT_PROFILE
+  }
+}
+
+const INCOGNITO_KEY = 'verixa.incognito.v1'
+
+function loadIncognito(): boolean {
+  try {
+    return sessionStorage.getItem(INCOGNITO_KEY) === 'on'
+  } catch {
+    return false
   }
 }
 
@@ -794,6 +805,8 @@ function App() {
   const [askMode, setAskMode] = useState<AskMode>(loadAskMode)
   const [steps, setSteps] = useState<string[]>([])
   const [chatSourcesOpen, setChatSourcesOpen] = useState(false)
+  const [incognito, setIncognito] = useState(loadIncognito)
+  const incognitoThreadIds = useRef<Set<string>>(new Set())
 
   const activeThread = threads.find((x) => x.id === activeId)
   const chatSources = useMemo(() => {
@@ -838,8 +851,36 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (incognito) return
     saveThreads(threads)
-  }, [threads])
+  }, [threads, incognito])
+
+  function toggleIncognito(): void {
+    if (incognito) {
+      // Leaving incognito: drop threads created while private so they are
+      // never written to localStorage or synced to the account.
+      const ids = incognitoThreadIds.current
+      setThreads((prev) => prev.filter((t) => !ids.has(t.id)))
+      setActiveId((prev) => (prev && ids.has(prev) ? null : prev))
+      incognitoThreadIds.current = new Set()
+      setIncognito(false)
+      try {
+        sessionStorage.removeItem(INCOGNITO_KEY)
+      } catch {
+        /* private mode: state stays in memory */
+      }
+      reset()
+      return
+    }
+    // Entering incognito: start a clean thread. Saved threads stay saved.
+    setIncognito(true)
+    try {
+      sessionStorage.setItem(INCOGNITO_KEY, 'on')
+    } catch {
+      /* ignore */
+    }
+    reset()
+  }
 
   useEffect(() => {
     try {
@@ -920,7 +961,7 @@ function App() {
       )
       setThreads(next)
       const updated = next.find((t) => t.id === activeId)
-      if (updated) syncThread(updated, session?.token).catch(() => undefined)
+      if (updated && !incognito) syncThread(updated, session?.token).catch(() => undefined)
     } else {
       const thread: Thread = {
         id: newId(),
@@ -930,7 +971,11 @@ function App() {
       }
       setActiveId(thread.id)
       setThreads((prev) => [thread, ...prev])
-      syncThread(thread, session?.token).catch(() => undefined)
+      if (incognito) {
+        incognitoThreadIds.current.add(thread.id)
+      } else {
+        syncThread(thread, session?.token).catch(() => undefined)
+      }
     }
   }
   function finishTurn(
@@ -1003,13 +1048,16 @@ function App() {
     let standalone = q
     const started = Date.now()
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (session) headers.Authorization = `Bearer ${session.token}`
+    // Incognito: never send the auth token, so the request is anonymous
+    // and the server cannot touch account data (memories, threads).
+    if (session && !incognito) headers.Authorization = `Bearer ${session.token}`
     const payload = JSON.stringify({
       query: q,
       history,
       num_results: prefs.numResults,
       profile,
       mode: askMode,
+      incognito,
     })
 
     const controller = new AbortController()
@@ -1236,6 +1284,11 @@ function App() {
   async function shareThread(): Promise<void> {
     const t = threads.find((x) => x.id === activeId)
     if (!t) return
+    if (incognito) {
+      setError('Sharing is off in incognito. Turn incognito off to share a thread.')
+      setShareState('failed')
+      return
+    }
     try {
       await syncThread(t, session?.token)
       await navigator.clipboard.writeText(`${window.location.origin}/t/${t.id}`)
@@ -1472,6 +1525,27 @@ function App() {
           <span className="new-thread-label">New thread</span>
           <kbd className="new-thread-kbd" aria-hidden="true">⌘K</kbd>
         </button>
+        <button
+          type="button"
+          className={`incognito-toggle${incognito ? ' on' : ''}`}
+          onClick={toggleIncognito}
+          aria-pressed={incognito}
+          title={
+            sidebarCollapsed
+              ? incognito
+                ? 'Incognito on — nothing is saved'
+                : 'Incognito off'
+              : incognito
+                ? 'Incognito is on: questions and threads are not saved. Click to turn off.'
+                : 'Incognito: ask without saving history or memories'
+          }
+          aria-label={incognito ? 'Turn off incognito mode' : 'Turn on incognito mode'}
+        >
+          <EyeSlash size={18} weight={incognito ? 'fill' : 'regular'} />
+          <span className="new-thread-label">
+            {incognito ? 'Incognito: on' : 'Incognito'}
+          </span>
+        </button>
         <div className="thread-search">
           <MagnifyingGlass size={16} aria-hidden="true" />
           <label className="visually-hidden" htmlFor="thread-filter">
@@ -1648,6 +1722,13 @@ function App() {
 
       <div className="content">
         <div className="shell">
+          {incognito && (
+            <div className="incognito-banner" role="status">
+              <EyeSlash size={14} weight="bold" aria-hidden="true" />
+              <span>Incognito — questions, threads, and memories are not saved.</span>
+              <button type="button" onClick={toggleIncognito}>Turn off</button>
+            </div>
+          )}
           <header className="topbar">
             <div className="topbar-left">
               <button

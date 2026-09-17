@@ -20,6 +20,7 @@ The repository directory is named `Seekora`; the application and product name ar
 - **Email/password accounts** with bcrypt password hashes and seven-day JWT sessions
 - **Per-user memory** with manual memory management, automatic learning, usage controls, and a 100-item cap
 - **Local personalization** for identity, context, location, answer length, answer format, and custom instructions
+- **Incognito mode** for private questions: no thread persistence, no server sync, no memory use or learning, no query logging
 - **Related questions** generated after completed answers
 - **Responsive dark UI** with desktop and mobile sidebars
 - **Non-streaming fallback** for clients or preferences that do not use SSE
@@ -345,6 +346,24 @@ http://localhost:5173/t/<thread-id>
 
 Shared pages are public and read-only. Anyone with the link can view the thread without an account. Delete the local thread to remove its server copy when signed in.
 
+Sharing is disabled while incognito mode is on, because publishing a thread would upload it to the server.
+
+### Incognito mode
+
+Toggle **Incognito** under *New thread* in the sidebar, or use the banner button in the header, to ask questions that leave no trace. While it is on:
+
+- Threads are kept in memory for the current tab only. Nothing is written to `localStorage`.
+- Threads are never synced to PostgreSQL, so signing in does not save them.
+- The request is sent without an auth token and with `"incognito": true`, so the server cannot read or write account data.
+- Saved memories are not loaded into the prompt, so answers are not personalized from account data.
+- Automatic memory learning is disabled for the answer.
+- The user's question is redacted from backend verification and research logs.
+- Sharing thread links is disabled.
+
+Closing incognito deletes its threads from the tab and clears them from state before normal saving resumes, so private threads cannot leak into stored history. The flag itself lives in `sessionStorage` under `verixa.incognito.v1`, so a reload in the same tab stays private while a new tab starts normal.
+
+Incognito is a browser-and-account privacy control, not anonymity from network intermediaries: the question, the retrieved pages, and the generated answer still pass through the Exa and Groq APIs under the server's API keys.
+
 ### Accounts and settings
 
 Sign in or create an account from the sidebar. Passwords must be 8–72 bytes and are stored as bcrypt hashes. Successful authentication returns a JWT stored in browser local storage under `verixa.auth.v1`; sessions expire after seven days.
@@ -402,7 +421,8 @@ curl -X POST http://localhost:8000/api/ask \
     "history": [],
     "num_results": 5,
     "profile": {},
-    "mode": "search"
+    "mode": "search",
+    "incognito": false
   }'
 ```
 
@@ -506,6 +526,7 @@ Thread records accept at most 50 turns. Each turn is limited to 2,000 query char
 | `verixa.profile.v1` | Local personalization |
 | `verixa.mode.v1` | Selected search or deep mode |
 | `verixa.sidebar.v1` | Sidebar open or collapsed state |
+| `verixa.incognito.v1` | Incognito flag (sessionStorage) |
 
 The frontend also recognizes the legacy `seekora.threads.v1` history key and migrates valid records into the current shape in memory.
 
@@ -517,6 +538,18 @@ The frontend also recognizes the legacy `seekora.threads.v1` history key and mig
 source .venv/bin/activate
 python -m compileall backend verixa
 ```
+
+### Backend tests
+
+Verification and incognito behavior are covered by dependency-free scripts (no network, no LLM, no database):
+
+```bash
+source .venv/bin/activate
+python backend/tests/test_verify.py
+python backend/tests/test_incognito.py
+```
+
+Both print one `PASS`/`FAIL` line per check and exit non-zero when any check fails.
 
 ### Frontend lint
 

@@ -542,12 +542,17 @@ def answer_query(
     profile: dict | None = None,
     num_results: int | None = None,
     user_id=None,
+    incognito: bool = False,
 ) -> dict:
     """Search Exa, then synthesize a cited answer with LangChain + Groq."""
     history = history or []
     count = num_results or DEFAULT_RESULTS
     llm = get_llm()
-    memories, auto_learn = load_memory_context(user_id)
+    if incognito:
+        # Privacy mode: no personalization context, no memory learning.
+        memories, auto_learn = [], False
+    else:
+        memories, auto_learn = load_memory_context(user_id)
     extra = build_system_extra(profile, memories)
 
     if route_message(query, history, llm) == "chat":

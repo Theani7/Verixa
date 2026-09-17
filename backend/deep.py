@@ -317,13 +317,19 @@ def source_texts_for_verify(
 
 
 def verify_report(
-    query: str, context: str, draft: str, llm, sources: list[dict] | None = None
+    query: str,
+    context: str,
+    draft: str,
+    llm,
+    sources: list[dict] | None = None,
+    redact_query: bool = False,
 ) -> VerificationReport:
     """Claim-level verification: extract -> batch-verify -> report.
 
     One LLM call for extraction, one for verification (batched over all
     claims against already-retrieved text). No extra web searches.
     Rule-based fallback keeps every claim checked when the model fails.
+    redact_query keeps the user's question out of logs (incognito).
     """
     import logging as logging_lib
 
@@ -344,9 +350,9 @@ def verify_report(
     metrics["verification_failures"] = failures
     report.metrics = metrics
     log.info(
-        "verify query=%.60s claims=%d supported=%d partial=%d unsupported=%d "
+        "verify query=%s claims=%d supported=%d partial=%d unsupported=%d "
         "contradicted=%d unclear=%d",
-        query,
+        "(redacted)" if redact_query else query[:60],
         metrics.get("claims_extracted", 0),
         metrics.get("claims_supported", 0),
         metrics.get("claims_partially_supported", 0),
@@ -387,6 +393,7 @@ def synthesize_report(
     llm,
     sources: list[dict] | None = None,
     on_progress=None,
+    incognito: bool = False,
 ) -> tuple[str, dict]:
     """Draft -> claim-verify -> targeted rewrite -> final verification.
 
@@ -402,7 +409,9 @@ def synthesize_report(
         llm,
     )
     text = draft.content if isinstance(draft.content, str) else ""
-    report = verify_report(query, safe_context, text, llm, sources)
+    report = verify_report(
+        query, safe_context, text, llm, sources, redact_query=incognito
+    )
     metrics = dict(report.to_metrics())
     bad = [r for r in report.results if needs_rewrite(r)]
     if not bad:
@@ -420,7 +429,9 @@ def synthesize_report(
         llm,
     )
     final = fixed.content if isinstance(fixed.content, str) else ""
-    final_report = verify_report(query, safe_context, final or text, llm, sources)
+    final_report = verify_report(
+        query, safe_context, final or text, llm, sources, redact_query=incognito
+    )
     final_metrics = final_report.to_metrics()
     final_metrics["claims_rewritten"] = len(bad)
     # Publish the rewrite only if it did not get worse; otherwise keep
@@ -440,11 +451,16 @@ def deep_answer(
     profile: dict | None = None,
     user_id=None,
     on_progress=None,
+    incognito: bool = False,
 ) -> dict:
     history = history or []
     llm = get_llm()
     history_text = format_history(history)
-    memories, auto_learn = load_memory_context(user_id)
+    if incognito:
+        # Privacy mode: no personalization context, no memory learning.
+        memories, auto_learn = [], False
+    else:
+        memories, auto_learn = load_memory_context(user_id)
     extra = build_system_extra(profile, memories)
 
     def progress(label: str) -> None:
@@ -495,13 +511,13 @@ def deep_answer(
 
     progress("Drafting the report")
     content, verify_metrics = synthesize_report(
-        query, history_text, context, extra, llm, sources, progress
+        query, history_text, context, extra, llm, sources, progress, incognito
     )
     import logging as logging_lib
 
     logging_lib.getLogger("verixa.verify").info(
-        "deep query=%.60s rounds plan=%d executed=%d retrieved=%d used=%d %s",
-        query,
+        "deep query=%s rounds plan=%d executed=%d retrieved=%d used=%d %s",
+        "(redacted)" if incognito else query[:60],
         len(plan),
         len(seen_queries),
         sum(len(getattr(r, "results", []) or []) for r in collected),
