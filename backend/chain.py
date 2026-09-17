@@ -46,11 +46,8 @@ def build_context(result, max_results: int = 5) -> tuple[str, list[dict]]:
     return "\n\n".join(blocks), sources
 
 
-def answer_query(query: str) -> dict:
-    """Search Exa, then synthesize a cited answer with LangChain + Groq."""
-    result = web_search(query)
-    context, sources = build_context(result)
-
+def build_answer_chain():
+    """LangChain chain: prompt plus Groq chat model for cited answers."""
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),
@@ -62,7 +59,14 @@ def answer_query(query: str) -> dict:
             ),
         ]
     )
-    llm = get_llm()
-    chain = prompt | llm
+    return prompt | get_llm()
+
+
+def answer_query(query: str) -> dict:
+    """Search Exa, then synthesize a cited answer with LangChain + Groq."""
+    result = web_search(query)
+    context, sources = build_context(result)
+
+    chain = build_answer_chain()
     response = chain.invoke({"query": query, "context": context})
     return {"answer": response.content, "sources": sources}
