@@ -999,64 +999,6 @@
   border-radius: 4px;
 }
 
-.new-question {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 16px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 600;
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease);
-}
-
-.new-question:hover {
-  border-color: var(--accent);
-}
-
-.new-question:active {
-  transform: scale(0.98);
-}
-
-.thread-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.share-button {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 14px;
-  font-weight: 600;
-  transition:
-    background var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease);
-}
-
-.share-button:hover {
-  background: var(--accent-hover);
-}
-
-.share-button:active {
-  transform: scale(0.98);
-}
-
 /* Public shared thread page */
 
 .shared-top {

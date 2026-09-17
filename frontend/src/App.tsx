@@ -824,11 +824,38 @@ function App() {
         <button
           type="button"
           className="action-btn"
-          aria-label="Copy thread link"
-          title="Share thread"
+          aria-label={
+            shareState === 'copied'
+              ? 'Thread link copied'
+              : shareState === 'failed'
+                ? 'Sharing failed, try again'
+                : 'Copy thread link'
+          }
+          title={
+            shareState === 'copied'
+              ? 'Link copied'
+              : shareState === 'failed'
+                ? 'Sharing failed, try again'
+                : 'Share thread'
+          }
           onClick={() => shareThread()}
         >
-          {shareState === 'copied' ? <Check size={17} /> : <ShareNetwork size={17} />}
+          {shareState === 'copied' ? (
+            <Check size={17} />
+          ) : shareState === 'failed' ? (
+            <WarningCircle size={17} />
+          ) : (
+            <ShareNetwork size={17} />
+          )}
+        </button>
+        <button
+          type="button"
+          className="action-btn"
+          aria-label="Start new thread"
+          title="New thread"
+          onClick={() => reset()}
+        >
+          <Plus size={17} />
         </button>
         {list.length > 0 && (
           <button
@@ -1210,31 +1237,6 @@ function App() {
                     <SourceList prefix="live-" sources={sources} />
                   )}
                 </>
-              )}
-
-              {phase === 'done' && turns.length > 0 && (
-                <div className="thread-actions rise rise-2">
-                  <button
-                    type="button"
-                    className="share-button"
-                    onClick={shareThread}
-                  >
-                    <ShareNetwork size={18} />
-                    {shareState === 'copied'
-                      ? 'Link copied'
-                      : shareState === 'failed'
-                        ? 'Sharing failed'
-                        : 'Share'}
-                  </button>
-                  <button
-                    type="button"
-                    className="new-question"
-                    onClick={reset}
-                  >
-                    <ArrowClockwise size={18} />
-                    New question
-                  </button>
-                </div>
               )}
 
               <div className="composer-dock">
