@@ -2023,6 +2023,229 @@
   }
 }
 
+/* Grok-style deep-research thinking card */
+
+.think-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  padding: 14px 16px 12px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  position: relative;
+}
+
+.think-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent), transparent 85%);
+  opacity: 0.7;
+}
+
+.think-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.think-spark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--accent);
+  animation: think-pulse 2200ms ease-in-out infinite;
+}
+
+@keyframes think-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.12);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+  }
+}
+
+.think-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.think-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.think-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  animation: think-dot 1200ms ease-in-out infinite;
+}
+
+.think-dots span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.think-dots span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes think-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.think-timer {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 3px 9px;
+}
+
+.think-current {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.fade-swap {
+  animation: fade-slide 350ms var(--ease);
+}
+
+@keyframes fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.think-bar {
+  margin-top: 12px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.think-bar-fill {
+  display: block;
+  height: 100%;
+  width: 35%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: think-scan 1600ms ease-in-out infinite;
+}
+
+@keyframes think-scan {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
+.think-toggle {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.think-toggle:hover {
+  color: var(--ink);
+}
+
+.think-toggle svg {
+  transition: transform 200ms var(--ease);
+}
+
+.think-toggle svg.flip {
+  transform: rotate(180deg);
+}
+
+.think-trail {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.think-trail li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--faint);
+  padding: 3px 0;
+  animation: fade-slide 300ms var(--ease);
+}
+
+.think-trail li svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .think-spark,
+  .think-dots span,
+  .think-bar-fill,
+  .fade-swap {
+    animation: none;
+  }
+}
+
 /* Streaming caret */
 
 .stream-text {
