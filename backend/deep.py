@@ -20,6 +20,8 @@ Slower and more expensive than search mode by design.
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
+import logging
+
 from langchain_core.prompts import ChatPromptTemplate
 
 from backend.chain import (
@@ -34,10 +36,10 @@ from backend.chain import (
     format_history,
     get_llm,
     is_rate_limit_error,
-    load_memory_context,
     maybe_learn_memories,
     normalize_citations,
     related_questions,
+    resolve_memory_context,
 )
 from backend.verify import (
     ClaimVerification,
@@ -445,58 +447,55 @@ def synthesize_report(
     return normalize_citations(text), metrics
 
 
-def deep_answer(
+def run_research(
     query: str,
-    history: list[dict] | None = None,
-    profile: dict | None = None,
-    user_id=None,
-    on_progress=None,
-    incognito: bool = False,
-) -> dict:
-    history = history or []
-    llm = get_llm()
-    history_text = format_history(history)
-    if incognito:
-        # Privacy mode: no personalization context, no memory learning.
-        memories, auto_learn = [], False
-    else:
-        memories, auto_learn = load_memory_context(user_id)
-    extra = build_system_extra(profile, memories)
+    history_text: str,
+    llm,
+    progress=None,
+    decompose_fn=None,
+):
+    """Plan, run rounds, read full pages, and merge sources.
 
-    def progress(label: str) -> None:
-        if on_progress is not None:
-            on_progress(label)
+    The single implementation of the research loop. Both the blocking
+    (deep_answer) and streaming (event_stream) entry points call this, so
+    the two modes can never drift apart again.
 
-    progress("Planning research angles")
-    plan = decompose(query, history_text, llm)
+    Returns a ResearchResult dict: context, sources, collected, plan,
+    seen_queries.
+    """
+    def note(label: str) -> None:
+        if progress is not None:
+            progress(label)
+
+    note("Planning research angles")
+    plan = (decompose_fn or decompose)(query, history_text, llm)
     collected: list = []
     seen_queries: set[str] = set()
     context, sources = "", []
+    seen_str = ""
 
     for round_no in range(1, DEEP_MAX_ROUNDS + 1):
         if round_no == 1:
-            progress(f"Round 1: searching {len(plan)} angles in parallel")
+            note(f"Round 1: searching {len(plan)} angles in parallel")
             context, sources, _, seen_str = collect_round(
                 query, plan, collected, seen_queries, llm, round_no
             )
         else:
-            progress(f"Round {round_no}: checking what is still missing")
-            followups = reflect_gaps(query, context, llm, seen=seen_str)
+            note(f"Round {round_no}: checking what is still missing")
+            followups = reflect_gaps(
+                query, context, llm, DEEP_FOLLOWUPS, seen_str
+            )
             if not followups:
                 break
-            progress(f"Round {round_no}: running {len(followups)} follow-ups in parallel")
-            _, _ = run_research_round(followups, seen_queries, collected)
+            note(f"Round {round_no}: running {len(followups)} follow-ups in parallel")
+            run_research_round(followups, seen_queries, collected)
             context, sources, _, seen_str = collect_round(
                 query, [], collected, seen_queries, llm, 0
             )
-            if round_no == DEEP_MAX_ROUNDS:
-                break
         if not collected:
             break
-        if round_no < DEEP_MAX_ROUNDS and not sources:
-            continue
 
-    progress("Reading top sources in full")
+    note("Reading top sources in full")
     if sources:
         top_urls = [s["url"] for s in sources[:DEEP_TEXT_FETCH_TOP]]
         try:
@@ -509,21 +508,54 @@ def deep_answer(
     if not sources:
         context, sources = merge_results(collected)
 
-    progress("Drafting the report")
-    content, verify_metrics = synthesize_report(
-        query, history_text, context, extra, llm, sources, progress, incognito
-    )
-    import logging as logging_lib
+    return {
+        "context": context,
+        "sources": sources,
+        "collected": collected,
+        "plan": plan,
+        "seen_queries": seen_queries,
+    }
 
-    logging_lib.getLogger("verixa.verify").info(
-        "deep query=%s rounds plan=%d executed=%d retrieved=%d used=%d %s",
+
+def deep_research_report(
+    query: str,
+    history: list[dict] | None = None,
+    profile: dict | None = None,
+    user_id=None,
+    incognito: bool = False,
+    on_progress=None,
+) -> dict:
+    """Full deep-research pipeline: research, verify, report.
+
+    Blocking by design. The streaming entry point runs this in a worker
+    thread and forwards on_progress labels as SSE frames, so both paths
+    execute identical code.
+    """
+    history = history or []
+    llm = get_llm()
+    history_text = format_history(history)
+    memories, auto_learn = resolve_memory_context(user_id, incognito)
+    extra = build_system_extra(profile, memories)
+
+    research = run_research(query, history_text, llm, on_progress)
+    context = research["context"]
+    sources = research["sources"]
+    collected = research["collected"]
+
+    content, verify_metrics = synthesize_report(
+        query, history_text, context, extra, llm, sources, on_progress, incognito
+    )
+
+    logging.getLogger("verixa.verify").info(
+        "deep query=%s planned=%d executed=%d retrieved=%d used=%d %s",
         "(redacted)" if incognito else query[:60],
-        len(plan),
-        len(seen_queries),
+        len(research["plan"]),
+        len(research["seen_queries"]),
         sum(len(getattr(r, "results", []) or []) for r in collected),
         len(sources),
         " ".join(f"{k}={v}" for k, v in sorted(verify_metrics.items())),
     )
+
     maybe_learn_memories(user_id, query, content, llm, auto_learn)
     return {
         "answer": content,
@@ -532,3 +564,22 @@ def deep_answer(
         "mode": "deep",
         "related": related_questions(query, content, llm),
     }
+
+
+def deep_answer(
+    query: str,
+    history: list[dict] | None = None,
+    profile: dict | None = None,
+    user_id=None,
+    on_progress=None,
+    incognito: bool = False,
+) -> dict:
+    """Blocking deep-research answer (non-streaming clients)."""
+    return deep_research_report(
+        query,
+        history,
+        profile,
+        user_id,
+        incognito=incognito,
+        on_progress=on_progress,
+    )

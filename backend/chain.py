@@ -536,6 +536,17 @@ def build_system_extra(profile: dict | None, memories: list[str]) -> str:
     return "\n".join(parts)
 
 
+def resolve_memory_context(user_id, incognito: bool = False) -> tuple[list[str], bool]:
+    """Memories plus auto-learn flag, honoring incognito.
+
+    Incognito always yields no memories and no learning, so account data
+    can never reach the prompt or be written back.
+    """
+    if incognito:
+        return [], False
+    return load_memory_context(user_id)
+
+
 def answer_query(
     query: str,
     history: list[dict] | None = None,
@@ -548,11 +559,7 @@ def answer_query(
     history = history or []
     count = num_results or DEFAULT_RESULTS
     llm = get_llm()
-    if incognito:
-        # Privacy mode: no personalization context, no memory learning.
-        memories, auto_learn = [], False
-    else:
-        memories, auto_learn = load_memory_context(user_id)
+    memories, auto_learn = resolve_memory_context(user_id, incognito)
     extra = build_system_extra(profile, memories)
 
     if route_message(query, history, llm) == "chat":

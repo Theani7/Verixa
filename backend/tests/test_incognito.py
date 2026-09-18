@@ -47,7 +47,7 @@ def t3_no_memory_use():
         return ["secret memory"], True
 
     saved = {
-        "load": deep.load_memory_context,
+        "resolve": deep.resolve_memory_context,
         "decompose": deep.decompose,
         "collect": deep.collect_round,
         "reflect": deep.reflect_gaps,
@@ -56,7 +56,7 @@ def t3_no_memory_use():
         "related": deep.related_questions,
     }
     # Patch the names deep.py actually calls (imported into its namespace).
-    deep.load_memory_context = fake_load
+    deep.resolve_memory_context = fake_load
     deep.decompose = lambda q, h, llm, count=None: ["q1"]
     deep.collect_round = lambda *a, **k: ("ctx", [], [], "")
     deep.reflect_gaps = lambda *a, **k: []
