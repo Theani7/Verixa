@@ -123,6 +123,10 @@ def create_custom_llm(
             model=target_model,
             api_key=key,
             timeout=timeout,
+            default_headers={
+                "HTTP-Referer": "http://localhost:5173",
+                "X-Title": "Verixa",
+            },
         )
 
     if provider in ("openai", "custom"):
