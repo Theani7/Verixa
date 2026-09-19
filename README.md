@@ -76,13 +76,14 @@ Deep research extends this flow by planning multiple focused searches, collectin
 
 - Python
 - FastAPI
-- Pydantic request validation
+- Pydantic & pydantic-settings
 - LangChain Core
 - LangChain Groq
 - Exa Python client
 - SQLAlchemy 2
 - PostgreSQL with pgvector
 - psycopg 3
+- DiskCache
 - bcrypt
 - PyJWT
 - Uvicorn
@@ -145,27 +146,38 @@ docker rm verixa-postgres
 ```text
 .
 ├── backend/
+│   ├── answer_cache.py  # Query and answer caching with DiskCache TTL
 │   ├── auth.py          # Password hashing and JWT session handling
-│   ├── chain.py         # Routing, prompts, retrieval, synthesis, memory
+│   ├── chain.py         # Routing, retrieval, synthesis, memory
+│   ├── clients.py       # Centralized LLM and Exa client factories
+│   ├── config.py        # Centralized settings via pydantic-settings
 │   ├── db.py            # SQLAlchemy engine and session lifecycle
 │   ├── deep.py          # Deep-research planning and refinement
 │   ├── main.py          # FastAPI application and API routes
 │   ├── models.py        # Users, threads, and vector-memory tables
+│   ├── prompts/         # Modular prompt templates (synthesis, deep_research, memory)
+│   ├── search.py        # Exa search module with standalone CLI
 │   ├── streaming.py     # SSE event construction and streaming pipeline
+│   ├── tests/           # Unit test suites (test_verify, test_incognito, test_cache)
 │   └── threads.py       # Shared-thread validation and ownership
 ├── assets/
 │   └── images/
 │       ├── .gitkeep
 │       └── architecture.png # Architecture overview diagram
 ├── verixa/
-│   └── search.py        # Exa `/search` client and command-line search tool
+│   └── search.py        # Forwarding alias for backend.search
 ├── frontend/
 │   ├── src/
 │   │   ├── api.ts       # HTTP and authentication client
-│   │   ├── App.tsx      # Main answer-engine interface
-│   │   ├── SharedThread.tsx
+│   │   ├── App.tsx      # Main answer-engine view orchestration
+│   │   ├── SharedThread.tsx # Public shared thread view
+│   │   ├── components/  # Modular UI components (Sidebar, TurnCard, Modals, etc.)
+│   │   │   └── settings/ # Account, Memory, and Personalization panes
+│   │   ├── hooks/       # Custom React hooks (useThreadStore, useAskStream, etc.)
+│   │   ├── lib/         # URL and citation utility functions
+│   │   ├── styles/      # Modular stylesheets (sidebar, hero, thread, markdown, etc.)
 │   │   ├── markdown.tsx # Markdown, citation, and code rendering
-│   │   └── types.ts     # Shared frontend data types
+│   │   └── types.ts     # Centralized TypeScript domain types
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.ts
@@ -541,15 +553,16 @@ python -m compileall backend verixa
 
 ### Backend tests
 
-Verification and incognito behavior are covered by dependency-free scripts (no network, no LLM, no database):
+Verification, incognito, and cache behavior are covered by dependency-free test scripts (no network, no LLM, no database):
 
 ```bash
 source .venv/bin/activate
 python backend/tests/test_verify.py
 python backend/tests/test_incognito.py
+python -m backend.tests.test_cache
 ```
 
-Both print one `PASS`/`FAIL` line per check and exit non-zero when any check fails.
+Each suite prints results per check and exits non-zero when any check fails.
 
 ### Frontend lint
 
