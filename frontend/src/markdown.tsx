@@ -2,40 +2,11 @@ import { cloneElement, isValidElement } from 'react'
 import type { ReactNode } from 'react'
 import type { Source } from './types'
 import CodeBlock from './codeblock'
+import { faviconFor, hostnameOf, shortHost } from './lib/url'
+import { normalizeCitations } from './lib/citations'
 
-export function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
-}
+export { faviconFor, hostnameOf, shortHost, normalizeCitations }
 
-export function faviconFor(url: string): string {
-  return `https://www.google.com/s2/favicons?domain=${hostnameOf(url)}&sz=64`
-}
-
-export function shortHost(url: string): string {
-  return hostnameOf(url).split('.')[0]
-}
-
-/* Normalizes citations from models or streams:
-   - Converts native brackets 【1】 to [1]
-   - Groups consecutive citations [1] [2] -> [1][2]
-   - Removes floating space before punctuation: [1] . -> [1].
-   NOTE: literal <br> tags are NOT rewritten here (a raw newline would break
-   Markdown table rows). They are rendered as real breaks in renderInline.
-*/
-export function normalizeCitations(text: string): string {
-  let cleaned = text
-    .replace(/【(\d+)(?:[†‡][^】]*)?】/g, '[$1]')
-    .replace(/【\d+(?:[†‡][^】]*)?$/, '')
-  // Remove space between adjacent citation markers
-  cleaned = cleaned.replace(/(\[\d+\])\s+(?=\[\d+\])/g, '$1')
-  // Remove space before punctuation immediately following citations
-  cleaned = cleaned.replace(/(\[\d+\])\s+([.,;:!?])/g, '$1$2')
-  return cleaned
-}
 
 /* Inline Markdown: bold, italic, bold-italic, code spans, links, line breaks, and citation chips. */
 function renderInline(

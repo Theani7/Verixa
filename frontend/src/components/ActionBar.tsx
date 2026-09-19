@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { Check, Copy, Plus, ShareNetwork, WarningCircle } from '@phosphor-icons/react'
 import type { Source } from '../types'
-import { faviconFor, hostnameOf } from '../markdown'
+import { faviconFor, hostnameOf } from '../lib/url'
+
 
 export interface ActionBarProps {
   copied: boolean

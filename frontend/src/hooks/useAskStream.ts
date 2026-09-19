@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { API_URL, syncThread } from '../api'
 import type { Session } from '../api'
-import { normalizeCitations } from '../markdown'
+import { normalizeCitations } from '../lib/citations'
 import type { AskMode, Prefs, Profile, Source, Thread, Turn } from '../types'
+
 import { errorMessage } from '../lib/storage'
 import { isSource } from '../lib/normalize'
 
