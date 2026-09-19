@@ -84,8 +84,9 @@ def t6_benchmarks():
 
 
 def t7_tables():
-    src = open("backend/chain.py").read()
-    check("T7 prose-not-tables rule", "ordinary prose into tables" in src)
+    from backend.chain import SYSTEM_PROMPT
+    check("T7 prose-not-tables rule", "ordinary prose into tables" in SYSTEM_PROMPT)
+
 
 
 def t8_batch_and_metrics():

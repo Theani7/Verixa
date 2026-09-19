@@ -24,6 +24,7 @@ import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 
+from backend import answer_cache
 from backend.chain import (
     DEEP_CHAR_CAP,
     DEEP_FOLLOWUPS,
@@ -50,37 +51,15 @@ from backend.verify import (
     report_to_dict,
     verify_claims_batch,
 )
+from backend.prompts.deep_research import (
+    DECOMPOSE_SYSTEM_PROMPT,
+    REFLECT_SYSTEM_PROMPT,
+    VERIFY_SYSTEM_PROMPT,
+)
 from verixa.search import get_page_texts, web_search
 
-DECOMPOSE_SYSTEM_PROMPT = (
-    "You are a research planner. Break the research question into focused "
-    "sub-questions for web search, covering complementary angles: background "
-    "overview, key facts and statistics, expert analysis, counter-views or "
-    "criticisms, recent developments, and how-it-works details. Skip angles "
-    "that do not fit the question. No duplicates. Return a JSON array of "
-    "short strings, max 12 words each. Return ONLY the JSON array."
-)
-
-REFLECT_SYSTEM_PROMPT = (
-    "You are a research editor. Given the research question and the findings "
-    "gathered so far, list ONLY the follow-up web searches still needed to "
-    "fill real gaps: missing facts, unverified claims, absent viewpoints, "
-    "stale coverage. Do not repeat angles already covered. Be specific "
-    "(include names, dates, places where relevant). Return a JSON array of "
-    "short search queries, or [] when the findings already answer the "
-    "question well. Return ONLY the JSON array."
-)
-
-VERIFY_SYSTEM_PROMPT = (
-    "You are a fact-check editor. Given the research question, the numbered "
-    "web sources, and a draft answer with [n] citations, flag every factual "
-    "claim in the draft that is NOT clearly supported by the cited source "
-    "text. Return a JSON array of short strings, each naming the unsupported "
-    "claim and which citation fails it. Return [] when every cited claim is "
-    "supported. Return ONLY the JSON array."
-)
-
 DEEP_MAX_ROUNDS = 3
+
 DEEP_TEXT_FETCH_TOP = 6
 DEEP_FULLTEXT_CHARS = 6000
 DEEP_DOMAIN_CAP = 3
@@ -533,6 +512,11 @@ def deep_research_report(
     """
     history = history or []
     llm = get_llm()
+    cache_key = answer_cache.make_key(query, "deep", profile or {}, None, history)
+    if not incognito:
+        cached = answer_cache.get(cache_key)
+        if cached is not None:
+            return cached
     history_text = format_history(history)
     memories, auto_learn = resolve_memory_context(user_id, incognito)
     extra = build_system_extra(profile, memories)
@@ -557,13 +541,16 @@ def deep_research_report(
     )
 
     maybe_learn_memories(user_id, query, content, llm, auto_learn)
-    return {
+    result = {
         "answer": content,
         "sources": sources,
         "query": query,
         "mode": "deep",
         "related": related_questions(query, content, llm),
     }
+    if not incognito:
+        answer_cache.put(cache_key, result)
+    return result
 
 
 def deep_answer(
