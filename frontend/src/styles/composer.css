@@ -130,13 +130,18 @@
 }
 
 .mode-button.mode-deep-active {
-  background: rgba(168, 85, 247, 0.1);
-  border-color: rgba(168, 85, 247, 0.3);
-  color: #d8b4fe;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--ink);
 }
 
 .mode-button.mode-deep-active .mode-button-icon {
-  color: #c084fc;
+  color: var(--ink);
+}
+
+.mode-lock-badge {
+  color: var(--muted);
+  margin-left: -2px;
 }
 
 .mode-menu {
@@ -175,6 +180,35 @@
 .mode-option.active {
   background: rgba(255, 255, 255, 0.06);
   color: var(--ink);
+}
+
+.mode-option.locked-option {
+  opacity: 0.75;
+}
+
+.mode-option.locked-option:hover {
+  background: rgba(255, 255, 255, 0.04);
+  opacity: 1;
+}
+
+.mode-lock-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  margin-left: 6px;
+}
+
+.mode-lock-right {
+  margin-left: auto;
+  color: var(--muted);
+  flex-shrink: 0;
 }
 
 .mode-option > svg:last-child {

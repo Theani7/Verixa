@@ -48,6 +48,20 @@ app.add_middleware(
 class HistoryTurn(BaseModel):
     query: str
     answer: str = ""
+    mode: str | None = None
+
+
+def _validate_history_mode(history: list[HistoryTurn], target_mode: str) -> None:
+    for t in history:
+        if not t.mode:
+            continue
+        hist_mode = "deep" if t.mode == "deep" else "search"
+        curr_mode = "deep" if target_mode == "deep" else "search"
+        if hist_mode != curr_mode:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot switch modes in an active chat. This chat was started in {hist_mode} mode. Please start a new chat to use {curr_mode} mode.",
+            )
 
 
 class CustomLLMConfig(BaseModel):
@@ -164,6 +178,7 @@ def ask(
     req: AskRequest,
     authorization: str | None = Header(default=None),
 ) -> dict:
+    _validate_history_mode(req.history, req.mode)
     user_id = None if req.incognito else user_id_from_header(authorization)
     custom_llm_dict = req.custom_llm.model_dump() if req.custom_llm else None
     from backend.clients import create_custom_llm
@@ -196,6 +211,7 @@ def ask_stream(
     req: AskRequest,
     authorization: str | None = Header(default=None),
 ) -> StreamingResponse:
+    _validate_history_mode(req.history, req.mode)
     custom_llm_dict = req.custom_llm.model_dump() if req.custom_llm else None
     return StreamingResponse(
         event_stream(

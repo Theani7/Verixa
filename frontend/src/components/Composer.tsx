@@ -7,6 +7,7 @@ import {
   Cpu,
   Flask,
   GlobeHemisphereWest,
+  LockSimple,
   Plus,
   Sparkle,
   SpinnerGap,
@@ -23,6 +24,8 @@ export interface ComposerProps {
   hint?: string
   mode: AskMode
   onMode: (mode: AskMode) => void
+  isModeLocked?: boolean
+  onModeLockAttempt?: (targetMode: AskMode) => void
   onStop?: () => void
   llmConfig?: LLMConfig
   onSelectModel?: (providerId: string, modelName: string) => void
@@ -57,6 +60,8 @@ export function Composer({
   placeholder,
   mode,
   onMode,
+  isModeLocked = false,
+  onModeLockAttempt,
   onStop,
   llmConfig,
   onSelectModel,
@@ -83,6 +88,11 @@ export function Composer({
   }
 
   function pickMode(next: AskMode): void {
+    if (isModeLocked && next !== mode) {
+      setModeMenuOpen(false)
+      onModeLockAttempt?.(next)
+      return
+    }
     onMode(next)
     setModeMenuOpen(false)
   }
@@ -124,18 +134,21 @@ export function Composer({
           <div className="mode-wrap">
             <button
               type="button"
-              className={`mode-button${mode === 'deep' ? ' mode-deep-active' : ''}`}
+              className={`mode-button${mode === 'deep' ? ' mode-deep-active' : ''}${isModeLocked ? ' mode-locked' : ''}`}
               onClick={() => {
                 setModeMenuOpen((v) => !v)
                 setModelMenuOpen(false)
               }}
               aria-expanded={modeMenuOpen}
               aria-haspopup="listbox"
-              aria-label={`Answer mode: ${currentMode.label}`}
-              title="Answer mode"
+              aria-label={`Answer mode: ${currentMode.label}${isModeLocked ? ' (locked to this chat)' : ''}`}
+              title={isModeLocked ? `Mode locked to ${currentMode.label} for this chat` : 'Answer mode'}
             >
               <span className="mode-button-icon">{currentMode.icon}</span>
               <span className="mode-button-label">{currentMode.label}</span>
+              {isModeLocked && (
+                <LockSimple size={11} weight="bold" className="mode-lock-badge" aria-hidden="true" />
+              )}
               <CaretDown
                 size={11}
                 weight="bold"
@@ -159,23 +172,38 @@ export function Composer({
                     if (e.key === 'Escape') setModeMenuOpen(false)
                   }}
                 >
-                  {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      role="option"
-                      aria-selected={mode === m.id}
-                      className={`mode-option${mode === m.id ? ' active' : ''}`}
-                      onClick={() => pickMode(m.id)}
-                    >
-                      {m.icon}
-                      <span className="mode-text">
-                        <span className="mode-name">{m.label}</span>
-                        <span className="mode-desc">{m.desc}</span>
-                      </span>
-                      {mode === m.id && <Check size={16} weight="bold" />}
-                    </button>
-                  ))}
+                  {MODES.map((m) => {
+                    const isCurrent = mode === m.id
+                    const isLockedOut = isModeLocked && !isCurrent
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isCurrent}
+                        className={`mode-option${isCurrent ? ' active' : ''}${isLockedOut ? ' locked-option' : ''}`}
+                        onClick={() => pickMode(m.id)}
+                      >
+                        {m.icon}
+                        <span className="mode-text">
+                          <span className="mode-name">
+                            {m.label}
+                            {isLockedOut && (
+                              <span className="mode-lock-tag">
+                                <LockSimple size={10} weight="bold" />
+                                Locked
+                              </span>
+                            )}
+                          </span>
+                          <span className="mode-desc">
+                            {isLockedOut ? 'Start new chat to switch' : m.desc}
+                          </span>
+                        </span>
+                        {isCurrent && <Check size={16} weight="bold" />}
+                        {isLockedOut && <LockSimple size={13} weight="bold" className="mode-lock-right" />}
+                      </button>
+                    )
+                  })}
                 </div>
               </>
             )}

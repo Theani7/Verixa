@@ -13,6 +13,7 @@ import { Sidebar } from './components/Sidebar'
 import { Hero } from './components/Hero'
 import { TurnCard } from './components/TurnCard'
 import { LiveTurnCard } from './components/LiveTurnCard'
+import { ModeLockModal } from './components/ModeLockModal'
 import { useThreadStore } from './hooks/useThreadStore'
 import { useAskStream } from './hooks/useAskStream'
 import {
@@ -61,6 +62,11 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsCategory, setSettingsCategory] = useState<Category>('account')
   const [chatSourcesOpen, setChatSourcesOpen] = useState(false)
+  const [modeLockModal, setModeLockModal] = useState<{
+    isOpen: boolean
+    currentMode: AskMode
+    targetMode: AskMode
+  } | null>(null)
 
   const handleUpdateLlmConfig = (cfg: LLMConfig) => {
     setLlmConfig(cfg)
@@ -96,12 +102,17 @@ function App() {
     dropIncognitoThreads,
   } = useThreadStore(incognito, session?.token)
 
+  const currentThreadMode: AskMode =
+    turns.length > 0 ? (turns[0].mode === 'deep' ? 'deep' : 'search') : askMode
+
+  const effectiveAskMode: AskMode = turns.length > 0 ? currentThreadMode : askMode
+
   const askStream = useAskStream({
     session,
     incognito,
     profile,
     prefs,
-    askMode,
+    askMode: effectiveAskMode,
     llmConfig,
     historyTurns: turns,
     onTurn: persistTurn,
@@ -188,8 +199,34 @@ function App() {
 
   function handleOpenThread(id: string): void {
     askStream.clearForOpen()
-    storeOpenThread(id)
+    const opened = storeOpenThread(id)
+    if (opened && opened.turns.length > 0) {
+      const mode: AskMode = opened.turns[0]?.mode === 'deep' ? 'deep' : 'search'
+      setAskMode(mode)
+    }
     setSidebarOpen(false)
+  }
+
+  function handleModeChange(targetMode: AskMode): void {
+    if (inThread && targetMode !== currentThreadMode) {
+      setModeLockModal({
+        isOpen: true,
+        currentMode: currentThreadMode,
+        targetMode,
+      })
+      return
+    }
+    setAskMode(targetMode)
+  }
+
+  function handleStartNewChatWithMode(targetMode: AskMode): void {
+    const draft = askStream.query
+    setModeLockModal(null)
+    handleReset()
+    setAskMode(targetMode)
+    if (draft.trim()) {
+      askStream.setQuery(draft)
+    }
   }
 
   function handleToggleIncognito(): void {
@@ -385,7 +422,7 @@ function App() {
                   resolvedQuery={askStream.resolvedQuery}
                   error={askStream.error}
                   related={askStream.related}
-                  askMode={askMode}
+                  askMode={effectiveAskMode}
                   loading={askStream.loading}
                   streaming={askStream.streaming}
                   copiedKey={askStream.copiedKey}
@@ -409,8 +446,10 @@ function App() {
                     onChange={askStream.setQuery}
                     onSubmit={() => handleAsk()}
                     loading={askStream.loading}
-                    mode={askMode}
-                    onMode={setAskMode}
+                    mode={effectiveAskMode}
+                    onMode={handleModeChange}
+                    isModeLocked={inThread}
+                    onModeLockAttempt={handleModeChange}
                     onStop={askStream.loading ? askStream.stopAsk : undefined}
                     placeholder={
                       turns.length > 0 ? 'Ask a follow-up...' : 'Ask anything...'
@@ -466,6 +505,16 @@ function App() {
         <ChatSourcesModal
           sources={chatSources}
           onClose={() => setChatSourcesOpen(false)}
+        />
+      )}
+
+      {modeLockModal && (
+        <ModeLockModal
+          isOpen={modeLockModal.isOpen}
+          currentMode={modeLockModal.currentMode}
+          targetMode={modeLockModal.targetMode}
+          onClose={() => setModeLockModal(null)}
+          onStartNewChat={handleStartNewChatWithMode}
         />
       )}
     </div>

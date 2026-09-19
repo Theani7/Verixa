@@ -183,6 +183,7 @@ export function useAskStream({
     const history = historyTurns.slice(-4).map((t) => ({
       query: t.query,
       answer: t.answer.slice(0, 2000),
+      mode: t.mode,
     }))
     let full = ''
     let accumulatedThought = ''
