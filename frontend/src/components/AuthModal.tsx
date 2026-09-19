@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight, X } from '@phosphor-icons/react'
-import { login, signup } from './api'
-import type { Session } from './api'
+import { login, signup } from '../api'
+import type { Session } from '../types'
 
-type Mode = 'signin' | 'signup'
+export type AuthMode = 'signin' | 'signup'
 
-export default function AuthModal({
-  initialMode,
-  onClose,
-  onSuccess,
-}: {
-  initialMode: Mode
+export interface AuthModalProps {
+  initialMode: AuthMode
   onClose: () => void
   onSuccess: (session: Session) => void
-}) {
-  const [mode, setMode] = useState<Mode>(initialMode)
+}
+
+export function AuthModal({ initialMode, onClose, onSuccess }: AuthModalProps) {
+  const [mode, setMode] = useState<AuthMode>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -69,7 +67,9 @@ export default function AuthModal({
         aria-labelledby="auth-title"
       >
         <div className="modal-head">
-          <h2 id="auth-title" className="modal-title">{title}</h2>
+          <h2 id="auth-title" className="modal-title">
+            {title}
+          </h2>
           <button
             type="button"
             className="modal-close"
@@ -139,7 +139,9 @@ export default function AuthModal({
           </div>
 
           {error !== '' && (
-            <p className="auth-error" role="alert">{error}</p>
+            <p className="auth-error" role="alert">
+              {error}
+            </p>
           )}
 
           <button type="submit" className="auth-submit" disabled={busy}>
@@ -152,14 +154,26 @@ export default function AuthModal({
           {mode === 'signin' ? (
             <>
               New to Verixa?{' '}
-              <button type="button" onClick={() => { setMode('signup'); setError('') }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup')
+                  setError('')
+                }}
+              >
                 Create an account
               </button>
             </>
           ) : (
             <>
               Already have an account?{' '}
-              <button type="button" onClick={() => { setMode('signin'); setError('') }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin')
+                  setError('')
+                }}
+              >
                 Sign in
               </button>
             </>
@@ -169,3 +183,5 @@ export default function AuthModal({
     </div>
   )
 }
+
+export default AuthModal
