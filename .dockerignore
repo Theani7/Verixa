@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+dist
+build
+node_modules
+frontend/node_modules
+frontend/dist
+.DS_Store
+**/.DS_Store
