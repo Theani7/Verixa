@@ -7,7 +7,7 @@
 [![Bun](https://img.shields.io/badge/Bun-1.2+-fbf0df.svg)](https://bun.sh/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ed.svg)](https://www.docker.com/)
 
-Verixa is an open-source, Perplexity-style answer engine that combines live web retrieval with large-language-model synthesis. It supports multiple LLM providers (**Groq**, **Ollama**, and **OpenAI-compatible endpoints**), live web search via Exa, and presents answers through a responsive React interface with server-sent event (SSE) streaming.
+Verixa is an open-source, Perplexity-style answer engine that pairs live web retrieval with large-language-model synthesis. It supports a universal multi-provider LLM hub (**OpenRouter**, **Groq**, **Ollama**, **OpenAI**, **Anthropic Claude**, and custom **OpenAI-compatible endpoints**), live web search via Exa, and real-time streaming rendered in a warm charcoal dark minimal interface.
 
 The repository directory is named `Seekora`; the application and product name are **Verixa**.
 
@@ -25,675 +25,333 @@ The fastest way to run Verixa locally with PostgreSQL (pgvector), FastAPI backen
    ```bash
    cp .env.example .env
    ```
-   Add your `GROQ_API_KEY` (or configure `LLM_PROVIDER=ollama`) and `EXA_API_KEY` in `.env`.
+   Add your `EXA_API_KEY` along with your preferred LLM key (`GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`) or configure local `OLLAMA_BASE_URL` in `.env`.
 
 3. **Start the stack**:
    ```bash
    docker compose up -d
    ```
 
-4. Open **`http://localhost:5173`** in your browser. The API and docs are accessible at `http://localhost:8000/docs`.
+4. Open **`http://localhost:5173`** in your browser. The API and interactive Swagger documentation are accessible at `http://localhost:8000/docs`.
 
-## Features
+---
 
-- **Live web search** through the Exa `/search` endpoint with titles, URLs, and highlights
-- **Grounded answer synthesis** using LangChain and Groq
-- **SSE streaming** with visible searching, reading, writing, thinking, and deep-research phases
-- **Search and deep-research modes**
-  - Search mode performs one retrieval pass and can route simple conversation to the chat path
-  - Deep mode decomposes a question, searches several angles, reflects on missing information, runs follow-up searches, and merges the sources
-- **Conversation-aware follow-ups** with pronoun resolution and up to four recent turns supplied to the model
-- **Inline numbered citations** linked to expandable source cards
-- **Markdown and code rendering**, including syntax highlighting and copyable code blocks
-- **Thread history** stored locally and synchronized to PostgreSQL when the user is signed in
-- **Public thread sharing** through read-only `/t/<id>` pages
-- **Email/password accounts** with bcrypt password hashes and seven-day JWT sessions
-- **Per-user memory** with manual memory management, automatic learning, usage controls, and a 100-item cap
-- **Local personalization** for identity, context, location, answer length, answer format, and custom instructions
-- **Incognito mode** for private questions: no thread persistence, no server sync, no memory use or learning, no query logging
-- **Related questions** generated after completed answers
-- **Responsive dark UI** with desktop and mobile sidebars
-- **Non-streaming fallback** for clients or preferences that do not use SSE
+## Key Features
+
+- **Universal Multi-Provider & Model Hub**:
+  - Out-of-the-box support for **OpenRouter**, **Groq**, **Ollama (local)**, **OpenAI**, **Anthropic (Claude)**, and any **Custom OpenAI-Compatible API** (vLLM, LM Studio, LocalAI, Together AI, DeepSeek).
+  - Add and manage multiple models simultaneously per provider with comma-separated inputs.
+  - Test LLM connectivity live with real-time health-check validation directly in the Settings modal (`/api/llm/test`).
+  - Switch active models on the fly without restarting services.
+- **Bespoke Warm Charcoal Dark Visual Experience**:
+  - Handcrafted dark monochrome palette (`#191a1a`, `#212323`, `#282b2b`, `#f2f1ec`) inspired by Perplexity's clean, distraction-free aesthetic.
+  - **Two Distinct Live Animations**:
+    - **Search Mode**: Compass radar scanning badge, monospaced query spotlight pill, 3-stage visual progress pipeline (*Search Query* &rarr; *Explore Sources* &rarr; *Synthesize*), and live discovered website shelf with high-resolution favicons and clean hostnames.
+    - **Deep Research Mode**: Quantum counter-rotating neural core, 4-stage research matrix (*Plan Angles* &rarr; *Deep Search* &rarr; *Fact Verification* &rarr; *Synthesize Dossier*), micro-fill progress bar, live source tray, and collapsible audit checkpoint trail.
+  - **Model Reasoning / Thinking Monologue Drawer**:
+    - Dedicated accordion view for reasoning models emitting `<think>` tags or `reasoning_content` (DeepSeek-R1, QwQ, etc.).
+    - Displays real-time streaming tokens with an elapsed duration counter, character count, and one-click copy button.
+- **True Low-Latency SSE Streaming**:
+  - Instantaneous Server-Sent Event streaming with zero pre-search latency, streaming discovered sources, incremental markdown tokens, and related questions.
+- **Fact Verification & Grounding Engine**:
+  - Multi-stage claim extraction, citation matching, contradictive conflict detection, and automated citation mapping with inline numbered citations (`[1]`, `[2]`).
+- **Live Web Retrieval via Exa**:
+  - High-precision web search with titles, URLs, snippets, and highlights automatically parsed into compact context windows.
+- **Incognito Privacy Mode**:
+  - Ephemeral in-memory threads (no `localStorage`, no database writes, no server sync).
+  - Query redacted from backend server logs, memory retrieval and learning bypassed, and public thread sharing disabled.
+- **Persistent Memory & Personalization**:
+  - pgvector-ready user memory store with automatic candidate learning and manual review controls.
+  - Local personalization profile for identity, occupation, custom system instructions, response length, and formatting preferences.
+- **Fast Response Caching**:
+  - Built-in DiskCache layer with configurable TTL for instant sub-second responses on repeated queries.
+- **Thread Management & Public Sharing**:
+  - Chronologically grouped sidebar threads (Today, Yesterday, Previous 7 days, Older) with search, deletion, and public read-only sharing via `/t/<id>`.
+
+---
 
 ## Architecture
 
 ```text
-Browser
-  |
-  |  React UI + SSE
-  v
-FastAPI backend ----------------------> PostgreSQL
-  |                                      users
-  |                                      threads
-  |                                      memories (pgvector)
-  |
-  +--> routing and follow-up rewriting
-  |
-  +--> Exa web search
-  |
-  +--> Groq through LangChain
-          |
-          +--> grounded answer
-          +--> related questions
-          +--> candidate memories
+Browser Client (React 19 + TypeScript + Bun)
+  │
+  │  HTTP / SSE Streaming / verixa.llm_config.v1
+  ▼
+FastAPI Application ─────────────────────────────────► PostgreSQL (pgvector)
+  │                                                      ├── users
+  │                                                      ├── threads
+  │                                                      └── memories
+  ├─► LLM Connection Tester (/api/llm/test)
+  ├─► Query Router & Conversational Rewriter
+  ├─► Exa Web Search Client
+  ├─► LLM Synthesis Engine (OpenRouter / Groq / Ollama / OpenAI / Anthropic)
+  │     ├── Grounded Markdown Answer & Citations
+  │     ├── Model Reasoning (<think> blocks)
+  │     ├── Related Questions Generator
+  │     └── Candidate Memory Extraction
+  └─► DiskCache (TTL response cache)
 ```
 
-## Architecture Overview
+### Architecture Overview
 
 ![Verixa architecture diagram](assets/images/architecture.png)
 
-The diagram summarizes how the React browser client, FastAPI backend, Exa search, Groq and LangChain synthesis, and PostgreSQL with pgvector storage interact.
+### Request Lifecycle
 
-### Request flow
+1. **Intake & Classification**:
+   - The backend receives the question, conversational history (up to 4 recent turns), user profile preferences, search mode (`search` vs `deep`), incognito flag, and optional client-side `custom_llm` credentials.
+   - Conversational greetings or questions fully answerable from recent context route directly to the chat path without unnecessary web searches.
+2. **Follow-Up Query Rewriting**:
+   - For multi-turn conversations, pronouns (such as "he", "she", "it", "that company") are resolved against previous turns into a self-contained search query.
+3. **Retrieval**:
+   - **Search Mode**: Single-pass Exa retrieval with adaptive source selection and high-resolution favicons streamed immediately to the UI.
+   - **Deep Mode**: Decomposes the prompt into multiple search angles, executes searches, deduplicates domains, performs gap reflection, and triggers follow-up queries.
+4. **Synthesis & Verification**:
+   - Compact source contexts are formatted and piped to the configured LLM.
+   - For reasoning models, internal thinking chunks stream into the collapsible thinking accordion.
+   - The answer streams as incremental markdown with inline citation markers (`[1]`, `[2]`).
+5. **Post-Processing**:
+   - Related follow-up questions are generated.
+   - For signed-in users (outside of incognito), durable user facts are extracted and saved to memory.
 
-For a normal web-search request, Verixa:
-
-1. Receives the query, recent history, personalization profile, result-count preference, answer mode, and optional bearer token.
-2. Classifies the request as chat or search. Greetings and conversation-only messages can use the chat path without web retrieval.
-3. Rewrites follow-up questions into standalone search queries using the recent thread context.
-4. Searches Exa and limits the source set.
-5. Builds a compact source context from titles, URLs, and highlights.
-6. Generates a Markdown answer with inline `[1]`, `[2]` citations.
-7. Normalizes model-native citation markers for the frontend.
-8. Streams progress, sources, tokens, related questions, completion, and errors as JSON SSE frames.
-9. Optionally extracts and stores durable user facts after a signed-in answer.
-
-Deep research extends this flow by planning multiple focused searches, collecting their results, deduplicating sources by URL, reflecting on gaps, performing follow-up searches, and synthesizing one answer from the combined evidence. The non-streaming deep endpoint runs the initial searches concurrently; the default streaming endpoint exposes each research step as it runs.
+---
 
 ## Technology Stack
 
 ### Backend
-
-- Python
-- FastAPI
-- Pydantic & pydantic-settings
-- LangChain Core
-- LangChain Groq
-- Exa Python client
-- SQLAlchemy 2
-- PostgreSQL with pgvector
-- psycopg 3
-- DiskCache
-- bcrypt
-- PyJWT
-- Uvicorn
+- **Python 3.12+** & **FastAPI**
+- **LangChain Core**, **LangChain Groq**, **LangChain OpenAI**, **LangChain Community**
+- **Exa Python Client** for neural web search
+- **SQLAlchemy 2** & **psycopg 3**
+- **PostgreSQL** with **pgvector**
+- **DiskCache** for TTL caching
+- **bcrypt** & **PyJWT** for authentication
+- **Uvicorn** for ASGI serving
 
 ### Frontend
+- **React 19** & **TypeScript**
+- **Vite** (bundled via Rolldown)
+- **Bun 1.2+** runtime & package manager
+- **Phosphor Icons**
+- **Highlight.js** for code syntax highlighting
+- **Native CSS** with warm charcoal design system
 
-- React 19
-- TypeScript
-- Vite
-- Bun
-- Phosphor Icons
-- Highlight.js
-- Native CSS
+---
 
 ## Prerequisites
 
-- Python 3.12 or newer
-- Bun 1.2 or newer
-- PostgreSQL with pgvector support
-- An Exa API key
-- A Groq API key
+- **Python 3.12** or newer
+- **Bun 1.2** or newer
+- **PostgreSQL** with `pgvector` support (optional for standalone local dev; required for accounts, threads sync, and memories)
+- **Exa API Key** (from [exa.ai](https://exa.ai))
+- An API key or local endpoint for your chosen LLM provider:
+  - **OpenRouter API Key** (from [openrouter.ai](https://openrouter.ai))
+  - **Groq API Key** (from [console.groq.com](https://console.groq.com))
+  - **OpenAI API Key** (from [platform.openai.com](https://platform.openai.com))
+  - **Anthropic API Key** (from [console.anthropic.com](https://console.anthropic.com))
+  - Or a running **Ollama** instance (`ollama run llama3`) or local **vLLM / LM Studio** server
 
-Install Bun using the [official Bun installation instructions](https://bun.sh/docs/installation).
+---
 
-### PostgreSQL and pgvector
+## Installation & Local Setup
 
-A local Homebrew installation can be prepared with:
-
-```bash
-brew install postgresql@18 pgvector
-```
-
-Follow the installation output to start PostgreSQL and make the pgvector extension available. Then create a role and database matching the local `DATABASE_URL`:
-
-```sql
-CREATE USER verixa WITH PASSWORD 'verixa';
-CREATE DATABASE verixa OWNER verixa;
-```
-
-Alternatively, run a pgvector-enabled PostgreSQL container:
+### 1. Backend Setup
 
 ```bash
-docker run --name verixa-postgres \
-  -e POSTGRES_USER=verixa \
-  -e POSTGRES_PASSWORD=verixa \
-  -e POSTGRES_DB=verixa \
-  -p 5432:5432 \
-  pgvector/pgvector:pg18
-```
-
-To stop and remove the container later:
-
-```bash
-docker stop verixa-postgres
-docker rm verixa-postgres
-```
-
-## Repository Layout
-
-```text
-.
-├── backend/
-│   ├── answer_cache.py  # Query and answer caching with DiskCache TTL
-│   ├── auth.py          # Password hashing and JWT session handling
-│   ├── chain.py         # Routing, retrieval, synthesis, memory
-│   ├── clients.py       # Centralized LLM and Exa client factories
-│   ├── config.py        # Centralized settings via pydantic-settings
-│   ├── db.py            # SQLAlchemy engine and session lifecycle
-│   ├── deep.py          # Deep-research planning and refinement
-│   ├── main.py          # FastAPI application and API routes
-│   ├── models.py        # Users, threads, and vector-memory tables
-│   ├── prompts/         # Modular prompt templates (synthesis, deep_research, memory)
-│   ├── search.py        # Exa search module with standalone CLI
-│   ├── streaming.py     # SSE event construction and streaming pipeline
-│   ├── tests/           # Unit test suites (test_verify, test_incognito, test_cache)
-│   └── threads.py       # Shared-thread validation and ownership
-├── assets/
-│   └── images/
-│       ├── .gitkeep
-│       └── architecture.png # Architecture overview diagram
-├── verixa/
-│   └── search.py        # Forwarding alias for backend.search
-├── frontend/
-│   ├── src/
-│   │   ├── api.ts       # HTTP and authentication client
-│   │   ├── App.tsx      # Main answer-engine view orchestration
-│   │   ├── SharedThread.tsx # Public shared thread view
-│   │   ├── components/  # Modular UI components (Sidebar, TurnCard, Modals, etc.)
-│   │   │   └── settings/ # Account, Memory, and Personalization panes
-│   │   ├── hooks/       # Custom React hooks (useThreadStore, useAskStream, etc.)
-│   │   ├── lib/         # URL and citation utility functions
-│   │   ├── styles/      # Modular stylesheets (sidebar, hero, thread, markdown, etc.)
-│   │   ├── markdown.tsx # Markdown, citation, and code rendering
-│   │   └── types.ts     # Centralized TypeScript domain types
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.ts
-├── .env.example         # Environment-variable template
-├── requirements.txt     # Python dependencies
-└── README.md
-```
-
-## Configuration
-
-Copy the environment template before starting the backend:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and configure these variables:
-
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `LLM_PROVIDER` | No | `groq` | Choose `groq`, `ollama`, `openai`, or `custom` |
-| `GROQ_API_KEY` | If using Groq | None | Authenticates Groq model requests |
-| `GROQ_MODEL` | No | `openai/gpt-oss-120b` | Model identifier for Groq |
-| `OLLAMA_BASE_URL` | If using Ollama | `http://localhost:11434/v1` | Base URL for local Ollama instance |
-| `OLLAMA_MODEL` | No | `llama3` | Model name pulled in Ollama |
-| `OPENAI_API_KEY` | If using OpenAI | None | Authenticates OpenAI requests |
-| `OPENAI_BASE_URL` | No | None | Custom base URL for vLLM, LM Studio, etc. |
-| `EXA_API_KEY` | For search & deep modes | None | Authenticates Exa web searches |
-| `DATABASE_URL` | Yes | `postgresql+psycopg://verixa:verixa@localhost:5432/verixa` | Selects the PostgreSQL database |
-| `SECRET_KEY` | Yes outside local dev | `dev-secret-change-me` | Signs and verifies JWT sessions |
-| `VITE_API_URL` | Frontend only | `http://localhost:8000` | Points the Vite client at the API |
-
-Generate a production-safe signing key:
-
-```bash
-openssl rand -hex 32
-```
-
-The backend loads `.env` through `python-dotenv`. The frontend only exposes variables prefixed with `VITE_`; set `VITE_API_URL` in `frontend/.env.local` when the API is not on `localhost:8000`:
-
-```dotenv
-VITE_API_URL=https://api.example.com
-```
-
-Never commit `.env`, API keys, JWT secrets, or database credentials. `.env` is already ignored by Git.
-
-## Installation
-
-Clone the repository and enter its directory:
-
-```bash
+# Clone the repository
 git clone https://github.com/Theani7/Verixa.git
 cd Verixa
-```
 
-### Backend
-
-Create and activate a virtual environment, then install dependencies:
-
-```bash
+# Create and activate virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Install dependencies
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-```
 
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-Copy and complete the environment file:
-
-```bash
+# Configure environment variables
 cp .env.example .env
 ```
 
-### Frontend
-
-Install dependencies with Bun:
+### 2. Frontend Setup
 
 ```bash
 cd frontend
 bun install
 ```
 
+---
+
+## Configuration
+
+Edit `.env` in the root directory to configure the backend:
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `EXA_API_KEY` | Yes | None | Authenticates Exa web searches |
+| `LLM_PROVIDER` | No | `groq` | Default provider: `openrouter`, `groq`, `ollama`, `openai`, `anthropic`, or `custom` |
+| `MODEL_NAME` | No | None | Global model name override |
+| `OPENROUTER_API_KEY` | Optional | None | OpenRouter API key |
+| `OPENROUTER_MODEL` | If using OpenRouter | None | Model ID (e.g., `anthropic/claude-3.5-sonnet`, `deepseek/deepseek-r1`) |
+| `OPENROUTER_BASE_URL`| No | `https://openrouter.ai/api/v1` | OpenRouter API base URL |
+| `GROQ_API_KEY` | If using Groq | None | Authenticates Groq API requests |
+| `GROQ_MODEL` | If using Groq | None | Groq model (e.g., `llama-3.3-70b-versatile`) |
+| `GROQ_TPM_LIMIT` | No | `8000` | Tokens-per-minute throttle limit |
+| `OLLAMA_BASE_URL` | If using Ollama | `http://localhost:11434/v1` | Base URL for local Ollama daemon |
+| `OLLAMA_MODEL` | If using Ollama | None | Local model tag (e.g., `llama3`, `deepseek-r1:8b`) |
+| `OPENAI_API_KEY` | If using OpenAI | None | Authenticates OpenAI requests |
+| `OPENAI_BASE_URL` | No | None | Custom base URL for vLLM, LM Studio, etc. |
+| `OPENAI_MODEL` | If using OpenAI | None | OpenAI model (e.g., `gpt-4o`, `gpt-4o-mini`) |
+| `ANTHROPIC_API_KEY` | If using Claude | None | Authenticates Anthropic API requests |
+| `ANTHROPIC_MODEL` | If using Claude | None | Claude model (e.g., `claude-3-5-sonnet-20241022`) |
+| `DATABASE_URL` | Yes | `postgresql+psycopg://verixa:verixa@localhost:5432/verixa` | Database connection string |
+| `SECRET_KEY` | Production | `dev-secret-change-me` | Signs and validates JWT tokens |
+| `VITE_API_URL` | Frontend only | `http://localhost:8000` | Target URL for frontend API requests |
+
+> **Note**: You can also configure all API keys and custom models directly in the web UI under **Settings &rarr; Models & API**. Client-side model configurations are saved securely in browser storage and seamlessly forwarded with each search request.
+
+---
+
 ## Running Locally
 
-Run the backend and frontend in separate terminals.
+Run backend and frontend in two separate terminals:
 
-### Terminal 1: backend
-
+### Terminal 1: Backend
 ```bash
 source .venv/bin/activate
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
+- API root: `http://localhost:8000`
+- Interactive API Docs: `http://localhost:8000/docs`
 
-The API is available at `http://localhost:8000`, and interactive API documentation is available at `http://localhost:8000/docs`.
-
-On startup, Verixa creates missing database tables and attempts to enable the PostgreSQL `vector` extension.
-
-### Terminal 2: frontend
-
+### Terminal 2: Frontend
 ```bash
 cd frontend
 bun run dev --host 0.0.0.0
 ```
+- Web Application: `http://localhost:5173`
 
-Open `http://localhost:5173`.
-
-The default frontend API target is `http://localhost:8000`. Change `VITE_API_URL` and restart Vite if the backend uses another host or port.
-
-## Verifying the Installation
-
-Check the backend health endpoint:
-
-```bash
-curl http://localhost:8000/api/health
-```
-
-Expected response:
-
-```json
-{"status":"ok"}
-```
-
-Test the Exa client directly:
-
-```bash
-source .venv/bin/activate
-python -m verixa.search "latest developments in retrieval augmented generation"
-```
-
-Build the frontend:
-
-```bash
-cd frontend
-bun run build
-```
+---
 
 ## Using Verixa
 
-### Asking questions
+### Search & Deep Research Modes
+Toggle modes directly from the composer pill:
+- **Search**: High-speed, focused web search for quick, accurate factual synthesis with live website favicons.
+- **Deep Research**: Comprehensive multi-angle investigation that recursively plans search queries, explores diverse web facets, verifies facts, and compiles an in-depth dossier.
 
-Enter a question in the composer and press `Enter`. Hold `Shift` and press `Enter` to add a new line. The default mode is **Search**.
+### Model Management & Connection Testing
+Open **Settings** (gear icon in the sidebar) &rarr; **Models & API**:
+- Select from preset providers (**OpenRouter**, **Groq**, **OpenAI**, **Claude**, **Ollama**, or **Custom Endpoint**).
+- Add multiple model identifiers simultaneously (e.g., paste `gpt-4o, gpt-4o-mini, o3-mini` or `deepseek/deepseek-r1, anthropic/claude-3.5-sonnet`).
+- Click **Test Connection** to immediately verify endpoint connectivity and credentials.
+- Choose your default chat and research models on the fly.
 
-Use the mode selector in the composer to choose:
+### Reasoning & Thinking Accordion
+When querying reasoning models (such as DeepSeek-R1 or QwQ), the model's inner `<think>` stream is captured into a sleek, collapsible drawer above the answer. It shows:
+- Dynamic elapsed duration ticker (e.g., `Thought for 4.2s`).
+- Live blinking streaming cursor.
+- One-click copy button for the entire reasoning monologue.
 
-- **Search**: fast, live-web answers with a focused source set
-- **Deep research**: slower multi-stage research for broad or complex questions
+### Incognito Mode
+Click **Incognito** in the sidebar to activate ephemeral browsing:
+- Zero data written to `localStorage` or PostgreSQL.
+- Server logs redact your query.
+- User memories are not loaded or updated.
+- Thread vanishes completely upon closing or reloading the tab.
 
-The backend may classify a selected search request as chat when the message is a greeting, thanks, small talk, or a follow-up that can be answered from conversation history.
-
-### Working with sources
-
-Search and deep-research answers display numbered citation chips. Select a citation chip to expand its source card and open the original URL. The source count in the answer action bar opens the complete source list for the thread.
-
-### Continuing a conversation
-
-Questions sent from an active thread include up to four recent turns. Verixa resolves references such as “he”, “she”, “it”, and “that report” before searching when appropriate.
-
-### Managing threads
-
-The sidebar shows threads grouped by Today, Yesterday, Previous 7 days, and Older. It supports:
-
-- Searching thread titles and question text
-- Opening, deleting, and starting threads
-- Collapsing or expanding the navigation
-- Keyboard focus shortcuts
-
-Local thread history is stored under `verixa.threads.v1`. Signed-in threads are also synchronized to PostgreSQL. Local history remains available when signed out, subject to browser storage limits and retention.
-
-### Sharing a thread
-
-Select the share action on a finished thread to copy a link in this form:
-
-```text
-http://localhost:5173/t/<thread-id>
-```
-
-Shared pages are public and read-only. Anyone with the link can view the thread without an account. Delete the local thread to remove its server copy when signed in.
-
-Sharing is disabled while incognito mode is on, because publishing a thread would upload it to the server.
-
-### Incognito mode
-
-Toggle **Incognito** under *New thread* in the sidebar, or use the banner button in the header, to ask questions that leave no trace. While it is on:
-
-- Threads are kept in memory for the current tab only. Nothing is written to `localStorage`.
-- Threads are never synced to PostgreSQL, so signing in does not save them.
-- The request is sent without an auth token and with `"incognito": true`, so the server cannot read or write account data.
-- Saved memories are not loaded into the prompt, so answers are not personalized from account data.
-- Automatic memory learning is disabled for the answer.
-- The user's question is redacted from backend verification and research logs.
-- Sharing thread links is disabled.
-
-Closing incognito deletes its threads from the tab and clears them from state before normal saving resumes, so private threads cannot leak into stored history. The flag itself lives in `sessionStorage` under `verixa.incognito.v1`, so a reload in the same tab stays private while a new tab starts normal.
-
-Incognito is a browser-and-account privacy control, not anonymity from network intermediaries: the question, the retrieved pages, and the generated answer still pass through the Exa and Groq APIs under the server's API keys.
-
-### Accounts and settings
-
-Sign in or create an account from the sidebar. Passwords must be 8–72 bytes and are stored as bcrypt hashes. Successful authentication returns a JWT stored in browser local storage under `verixa.auth.v1`; sessions expire after seven days.
-
-Account settings provide:
-
-- Full name and username
-- Password changes
-- Sign out and account deletion
-- Memory-use and automatic-learning controls
-
-Personalization settings are stored locally under `verixa.profile.v1` and sent with each request. They can include:
-
-- Name, occupation, company, and date of birth
-- Gender and optional shared location
-- Custom answer instructions
-- Short, default, or long response length
-- List, mixed, or paragraph-oriented response format
-
-Memory settings and saved facts are stored in PostgreSQL. Automatic memory learning is best-effort and does not interrupt answer generation.
+---
 
 ## API Reference
 
-FastAPI validates request bodies with Pydantic. Protected endpoints accept:
-
-```http
-Authorization: Bearer <JWT>
-```
-
-| Method | Path | Authentication | Description |
+| Method | Endpoint | Auth | Description |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | No | Returns backend health |
-| `POST` | `/api/ask` | Optional | Returns a complete JSON answer |
-| `POST` | `/api/ask/stream` | Optional | Streams an answer as SSE |
-| `PUT` | `/api/threads/{id}` | Optional | Creates or updates a thread |
-| `GET` | `/api/threads/{id}` | No | Reads a public shared thread |
-| `DELETE` | `/api/threads/{id}` | Optional | Deletes a thread owned by the caller |
-| `POST` | `/api/auth/signup` | No | Creates an account and session |
-| `POST` | `/api/auth/login` | No | Creates a session |
-| `GET` | `/api/me` | Yes | Returns the current account |
-| `PUT` | `/api/me` | Yes | Updates profile and memory preferences |
-| `PUT` | `/api/auth/password` | Yes | Changes the current password |
-| `DELETE` | `/api/me` | Yes | Deletes the account and related data |
-| `GET` | `/api/memories` | Yes | Lists saved memories |
-| `POST` | `/api/memories` | Yes | Saves a memory |
-| `DELETE` | `/api/memories/{id}` | Yes | Deletes one of the caller's memories |
+| `GET` | `/api/health` | Public | System health check |
+| `POST` | `/api/llm/test` | Public | Live connection tester for custom LLM configurations |
+| `POST` | `/api/ask` | Optional | Non-streaming JSON answer endpoint |
+| `POST` | `/api/ask/stream` | Optional | Low-latency Server-Sent Events (SSE) streaming endpoint |
+| `PUT` | `/api/threads/{id}` | Optional | Creates or updates a thread record |
+| `GET` | `/api/threads/{id}` | Public | Retrieves a public read-only shared thread |
+| `DELETE`| `/api/threads/{id}` | Optional | Deletes a thread owned by the caller |
+| `POST` | `/api/auth/signup` | Public | Register new account and receive JWT |
+| `POST` | `/api/auth/login` | Public | Log in and receive JWT |
+| `GET` | `/api/me` | Bearer | Fetch profile and account settings |
+| `PUT` | `/api/me` | Bearer | Update profile preferences |
+| `PUT` | `/api/auth/password` | Bearer | Update account password |
+| `DELETE`| `/api/me` | Bearer | Delete account and cascade-delete all data |
+| `GET` | `/api/memories` | Bearer | List saved user memories |
+| `POST` | `/api/memories` | Bearer | Create a new user memory item |
+| `DELETE`| `/api/memories/{id}` | Bearer | Delete a specific memory item |
 
-### Ask for a complete answer
+### Testing an LLM Connection
 
 ```bash
-curl -X POST http://localhost:8000/api/ask \
+curl -X POST http://localhost:8000/api/llm/test \
   -H 'Content-Type: application/json' \
   -d '{
-    "query": "What are the main advantages of retrieval augmented generation?",
-    "history": [],
-    "num_results": 5,
-    "profile": {},
-    "mode": "search",
-    "incognito": false
+    "provider": "openrouter",
+    "api_key": "sk-or-v1-...",
+    "base_url": "https://openrouter.ai/api/v1",
+    "model": "deepseek/deepseek-r1"
   }'
 ```
 
-Example response:
-
+Response:
 ```json
 {
-  "answer": "Retrieval augmented generation... [1]",
-  "sources": [
-    {
-      "id": 1,
-      "title": "Example source",
-      "url": "https://example.com/article",
-      "excerpt": "A relevant search highlight."
-    }
-  ],
-  "query": "What are the main advantages of retrieval augmented generation?",
-  "mode": "search",
-  "related": ["How is RAG evaluated?"]
+  "ok": true,
+  "message": "Connected successfully! Response: Hello! How can I assist you today?"
 }
 ```
 
-### Stream an answer
+---
 
-```bash
-curl -N -X POST http://localhost:8000/api/ask/stream \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "Explain pgvector in one paragraph.",
-    "history": [],
-    "mode": "search"
-  }'
-```
+## Testing & Verification
 
-SSE frames contain one JSON object per `data:` line:
-
-```text
-data: {"type":"status","phase":"searching"}
-
-data: {"type":"sources","sources":[{"id":1,"title":"...","url":"..."}]}
-
-data: {"type":"token","text":"..."}
-
-data: {"type":"related","questions":["..."]}
-
-data: {"type":"done"}
-```
-
-Supported event types are:
-
-| Event | Fields | Meaning |
-| --- | --- | --- |
-| `status` | `phase` | Current work phase |
-| `progress` | `label` | Deep-research progress detail |
-| `mode` | `mode` | Resolved `search` or `chat` mode |
-| `rewrite` | `query` | Standalone follow-up query |
-| `sources` | `sources` | Retrieved source metadata |
-| `token` | `text` | One generated text chunk |
-| `related` | `questions` | Suggested follow-up questions |
-| `done` | None | Stream completed successfully |
-| `error` | `message` | Stream failed; no `done` follows |
-
-### Create an account
-
-```bash
-curl -X POST http://localhost:8000/api/auth/signup \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "email": "user@example.com",
-    "password": "a-strong-password"
-  }'
-```
-
-Store the returned token and send it as a bearer token for protected requests.
-
-## Data Model
-
-Verixa uses three PostgreSQL tables:
-
-### `users`
-
-Stores email, bcrypt password hash, display name, username, creation time, and memory preferences.
-
-### `threads`
-
-Stores a public ID, optional owner, title, JSONB turns, and update timestamp. Thread ownership prevents another account from updating or deleting an owned thread.
-
-### `memories`
-
-Stores user-owned memory text, creation time, and an optional 1,536-dimensional pgvector embedding. The schema is vector-ready; the current automatic-learning path stores text candidates.
-
-Thread records accept at most 50 turns. Each turn is limited to 2,000 query characters, 20,000 answer characters, and 10 sources.
-
-## Browser Storage
-
-| Key | Contents |
-| --- | --- |
-| `verixa.threads.v1` | Local thread history |
-| `verixa.auth.v1` | JWT session and account summary |
-| `verixa.prefs.v1` | Result count and streaming preference |
-| `verixa.profile.v1` | Local personalization |
-| `verixa.mode.v1` | Selected search or deep mode |
-| `verixa.sidebar.v1` | Sidebar open or collapsed state |
-| `verixa.incognito.v1` | Incognito flag (sessionStorage) |
-
-The frontend also recognizes the legacy `seekora.threads.v1` history key and migrates valid records into the current shape in memory.
-
-## Development
-
-### Backend syntax check
+Verixa includes a complete set of automated test suites covering fact verification, incognito privacy isolation, and response caching:
 
 ```bash
 source .venv/bin/activate
-python -m compileall backend verixa
-```
 
-### Backend tests
-
-Verification, incognito, and cache behavior are covered by dependency-free test scripts (no network, no LLM, no database):
-
-```bash
-source .venv/bin/activate
+# 1. Fact verification and citation audit suite
 python backend/tests/test_verify.py
+
+# 2. Incognito privacy isolation and log redaction suite
 python backend/tests/test_incognito.py
+
+# 3. DiskCache TTL and cache hit/miss suite
 python -m backend.tests.test_cache
 ```
 
-Each suite prints results per check and exits non-zero when any check fails.
-
-### Frontend lint
-
-```bash
-cd frontend
-bun run lint
-```
-
-### Frontend typecheck and production build
-
-The project build runs TypeScript project references before Vite bundles the application:
+### Frontend Typechecking & Building
 
 ```bash
 cd frontend
 bun run build
 ```
 
-The generated frontend is written to `frontend/dist`.
+---
 
-### Run the search module directly
+## Browser Storage Keys
 
-```bash
-source .venv/bin/activate
-python -m verixa.search "your query here"
-```
+| Key | Storage | Description |
+| --- | --- | --- |
+| `verixa.threads.v1` | `localStorage` | Local conversation history and turns |
+| `verixa.auth.v1` | `localStorage` | JWT session token and user summary |
+| `verixa.llm_config.v1` | `localStorage` | Custom providers, keys, and model lists |
+| `verixa.prefs.v1` | `localStorage` | Application streaming and UI preferences |
+| `verixa.profile.v1` | `localStorage` | Personalization profile and custom instructions |
+| `verixa.mode.v1` | `localStorage` | Active search mode (`search` vs `deep`) |
+| `verixa.sidebar.v1` | `localStorage` | Sidebar collapsed or expanded state |
+| `verixa.incognito.v1` | `sessionStorage` | Ephemeral tab incognito state |
 
-Without a query, the module prints its usage message and exits with status 2.
+---
 
-## Production Deployment
+## Contributing
 
-A production deployment should:
-
-1. Set a strong, secret `SECRET_KEY`.
-2. Use a managed or dedicated PostgreSQL instance with pgvector.
-3. Set `DATABASE_URL` to a secure connection string.
-4. Configure `VITE_API_URL` for the deployed API.
-5. Serve the built `frontend/dist` directory through a static host or reverse proxy.
-6. Use HTTPS for both frontend and API traffic.
-7. Update FastAPI CORS configuration if the production frontend origin differs from `http://localhost:5173`.
-8. Place the API behind a proxy that preserves streaming responses and disables response buffering.
-9. Keep Exa and Groq credentials server-side only.
-10. Add operational controls such as rate limiting, request-size limits, monitoring, backups, and structured logs as required.
-
-The checked-in CORS allowlist currently permits `http://localhost:5173`. This is appropriate for local development but must be changed for a production frontend origin.
-
-## Troubleshooting
-
-### `EXA_API_KEY is not set`
-
-Confirm that `.env` exists beside `requirements.txt`, contains an active Exa key, and is loaded in the backend process. Restart Uvicorn after changing the file.
-
-### `GROQ_API_KEY is not set`
-
-Add a Groq key to `.env` and restart the backend. Every chat, search, rewrite, memory, and related-question path uses the Groq client.
-
-### Database connection errors
-
-Verify that PostgreSQL is running, the role and database exist, the password matches `DATABASE_URL`, and port 5432 is reachable. Test the SQLAlchemy URL from the activated backend environment before starting Uvicorn.
-
-### `extension "vector" is not available`
-
-Install pgvector for the PostgreSQL server and enable it in the active database. A client-side Python package alone does not add the PostgreSQL extension.
-
-### The frontend cannot reach the API
-
-Check that the backend is listening on port 8000. If it uses another origin, set `VITE_API_URL` in `frontend/.env.local` and restart the Vite server. Browser requests are subject to the backend CORS allowlist.
-
-### Streaming appears delayed
-
-Some reverse proxies buffer SSE responses. Disable proxy buffering and preserve these response headers:
-
-```http
-Cache-Control: no-cache
-X-Accel-Buffering: no
-Content-Type: text/event-stream
-```
-
-### Clipboard actions do not work
-
-Modern browsers may restrict the Clipboard API to secure contexts. Serve the frontend over HTTPS when deploying, or select and copy answer text manually during local HTTP development.
-
-### API keys and usage
-
-Exa and Groq are external services with usage limits and pricing. Search volume, model selection, and answer length affect usage. Review each provider's current pricing and key restrictions before production use.
-
-## Security Notes
-
-- `.env` is ignored, but secrets must also be protected by the deployment environment.
-- Replace the development `SECRET_KEY` before exposing authentication.
-- JWTs are stored in browser local storage for this development application.
-- Shared thread links are public and should not contain private information.
-- Account deletion cascades to owned threads and memories.
-- Thread ownership is enforced on server-side update and delete operations.
-- The current local deployment does not include rate limiting or abuse protection.
+Contributions are welcome! Please check [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on code standards, conventional commits, and submitting pull requests.
 
 ## License
 
-Verixa is licensed under the [MIT License](LICENSE). See the license file for the full terms and disclaimer.
+Verixa is open source under the [MIT License](LICENSE).
