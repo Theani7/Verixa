@@ -39,7 +39,7 @@ export interface HeroProps {
   onStop?: () => void
   onPickSuggestion: (text: string) => void
   llmConfig?: LLMConfig
-  onSelectModel?: (sourceId: string, modelName?: string) => void
+  onSelectModel?: (sourceId: string) => void
   onOpenModelSettings?: () => void
 }
 

@@ -92,10 +92,15 @@ def create_custom_llm(
         key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
         if not key:
             raise RuntimeError(
-                "Anthropic API key is required. Please provide it in Settings > Model & API or set ANTHROPIC_API_KEY."
+                "Anthropic API key is required. Please provide it in Settings > Model & Sources or set ANTHROPIC_API_KEY."
+            )
+        target_model = model or os.getenv("ANTHROPIC_MODEL") or settings.get_model()
+        if not target_model:
+            raise RuntimeError(
+                "Model name is required for Anthropic. Please specify it in Settings or ANTHROPIC_MODEL."
             )
         return ChatAnthropic(
-            model=model or "claude-3-5-sonnet-latest",
+            model=target_model,
             api_key=key,
             timeout=timeout,
         )
@@ -106,11 +111,16 @@ def create_custom_llm(
         key = api_key or os.getenv("OPENROUTER_API_KEY", "")
         if not key:
             raise RuntimeError(
-                "OpenRouter API key is required. Please provide it in Settings > Model & API or set OPENROUTER_API_KEY."
+                "OpenRouter API key is required. Please provide it in Settings > Model & Sources or set OPENROUTER_API_KEY."
+            )
+        target_model = model or os.getenv("OPENROUTER_MODEL") or settings.get_model()
+        if not target_model:
+            raise RuntimeError(
+                "Model name is required for OpenRouter. Please specify it in Settings or OPENROUTER_MODEL."
             )
         return ChatOpenAI(
-            base_url=base_url or "https://openrouter.ai/api/v1",
-            model=model or "anthropic/claude-3.5-sonnet",
+            base_url=base_url or os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            model=target_model,
             api_key=key,
             timeout=timeout,
         )

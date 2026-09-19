@@ -6,15 +6,13 @@ import {
   Check,
   Cpu,
   Flask,
-  Gear,
   GlobeHemisphereWest,
-  Lock,
+  Plus,
   Sparkle,
   SpinnerGap,
   Square,
 } from '@phosphor-icons/react'
 import type { AskMode, LLMConfig } from '../types'
-import { PROVIDER_PRESETS, getShortModelName, isProviderReady } from '../lib/llmProviders'
 
 export interface ComposerProps {
   value: string
@@ -27,7 +25,7 @@ export interface ComposerProps {
   onMode: (mode: AskMode) => void
   onStop?: () => void
   llmConfig?: LLMConfig
-  onSelectModel?: (sourceId: string, modelName?: string) => void
+  onSelectModel?: (sourceId: string) => void
   onOpenModelSettings?: () => void
 }
 
@@ -89,28 +87,23 @@ export function Composer({
     setModeMenuOpen(false)
   }
 
-  function handleModelPick(sourceId: string, modelName?: string, ready: boolean = true): void {
-    if (!ready && onOpenModelSettings) {
-      onOpenModelSettings()
-      setModelMenuOpen(false)
-      return
-    }
+  function handleModelPick(sourceId: string): void {
     if (onSelectModel) {
-      onSelectModel(sourceId, modelName)
+      onSelectModel(sourceId)
     }
     setModelMenuOpen(false)
   }
 
   const currentMode = MODES.find((m) => m.id === mode) ?? MODES[0]
 
-  // Determine current active model label
+  // Active label
   const activeLabel =
     llmConfig?.activeModelLabel ||
     (llmConfig?.provider && llmConfig.provider !== 'default'
-      ? `${llmConfig.provider}: ${getShortModelName(llmConfig.model || '')}`
-      : 'Auto (Default)')
+      ? `${llmConfig.provider} (${llmConfig.model})`
+      : 'Server Default')
 
-  const customSources = llmConfig?.customSources || []
+  const configuredSources = llmConfig?.sources || []
 
   return (
     <div className={`composer${value.trim() ? ' has-content' : ''}`}>
@@ -193,7 +186,7 @@ export function Composer({
           <div className="model-select-wrap">
             <button
               type="button"
-              className={`model-select-btn${llmConfig && llmConfig.provider !== 'default' ? ' custom-active' : ''}`}
+              className={`model-select-btn${llmConfig && llmConfig.activeSourceId !== 'default' ? ' custom-active' : ''}`}
               onClick={() => {
                 setModelMenuOpen((v) => !v)
                 setModeMenuOpen(false)
@@ -236,84 +229,47 @@ export function Composer({
 
                   <div className="model-menu-scroll">
                     {/* Server Default */}
-                    <div className="model-group">
-                      <div className="model-group-title">Default</div>
-                      <button
-                        type="button"
-                        className={`model-item${(!llmConfig || llmConfig.activeSourceId === 'default') ? ' active' : ''}`}
-                        onClick={() => handleModelPick('default')}
-                      >
-                        <div className="model-item-info">
-                          <span className="model-item-name">
-                            <Sparkle size={13} weight="fill" className="model-icon-sparkle" /> Server Default
-                          </span>
-                          <span className="model-item-sub">Auto-configured provider</span>
-                        </div>
-                        {(!llmConfig || llmConfig.activeSourceId === 'default') && (
-                          <Check size={14} weight="bold" />
-                        )}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className={`model-item${(!llmConfig || llmConfig.activeSourceId === 'default') ? ' active' : ''}`}
+                      onClick={() => handleModelPick('default')}
+                    >
+                      <div className="model-item-info">
+                        <span className="model-item-name">
+                          <Sparkle size={13} weight="fill" className="model-icon-sparkle" /> Server Default
+                        </span>
+                        <span className="model-item-id">Model from server environment</span>
+                      </div>
+                      {(!llmConfig || llmConfig.activeSourceId === 'default') && (
+                        <Check size={14} weight="bold" />
+                      )}
+                    </button>
 
-                    {/* Standard Providers */}
-                    {PROVIDER_PRESETS.filter((p) => p.id !== 'default').map((preset) => {
-                      const ready = llmConfig ? isProviderReady(llmConfig, preset.id) : false
-                      const isCurrentSource = llmConfig?.activeSourceId === preset.id
-
+                    {/* Explicitly Added Models */}
+                    {configuredSources.map((source) => {
+                      const isSelected = llmConfig?.activeSourceId === source.id
                       return (
-                        <div key={preset.id} className="model-group">
-                          <div className="model-group-title-row">
-                            <span className="model-group-title">{preset.name}</span>
-                            {!ready && <span className="key-req-tag"><Lock size={10} /> Key needed</span>}
+                        <button
+                          key={source.id}
+                          type="button"
+                          className={`model-item${isSelected ? ' active' : ''}`}
+                          onClick={() => handleModelPick(source.id)}
+                        >
+                          <div className="model-item-info">
+                            <span className="model-item-name">{source.name}</span>
+                            <span className="model-item-id">
+                              {source.provider} &bull; {source.model}
+                            </span>
                           </div>
-                          {preset.models.map((m) => {
-                            const isSelected = isCurrentSource && (llmConfig?.model === m || (!llmConfig?.model && m === preset.defaultModel))
-                            return (
-                              <button
-                                key={m}
-                                type="button"
-                                className={`model-item${isSelected ? ' active' : ''}${!ready ? ' needs-key' : ''}`}
-                                onClick={() => handleModelPick(preset.id, m, ready)}
-                                title={!ready ? 'Click to configure API key in Settings' : undefined}
-                              >
-                                <div className="model-item-info">
-                                  <span className="model-item-name">{getShortModelName(m)}</span>
-                                  <span className="model-item-id">{m}</span>
-                                </div>
-                                {isSelected ? (
-                                  <Check size={14} weight="bold" />
-                                ) : !ready ? (
-                                  <span className="btn-setup-text">Setup</span>
-                                ) : null}
-                              </button>
-                            )
-                          })}
-                        </div>
+                          {isSelected && <Check size={14} weight="bold" />}
+                        </button>
                       )
                     })}
 
-                    {/* Custom Sources */}
-                    {customSources.length > 0 && (
-                      <div className="model-group">
-                        <div className="model-group-title">Custom Endpoints</div>
-                        {customSources.map((cs) => {
-                          const isSelected = llmConfig?.activeSourceId === cs.id
-                          return (
-                            <button
-                              key={cs.id}
-                              type="button"
-                              className={`model-item${isSelected ? ' active' : ''}`}
-                              onClick={() => handleModelPick(cs.id, cs.model, true)}
-                            >
-                              <div className="model-item-info">
-                                <span className="model-item-name">{cs.name}</span>
-                                <span className="model-item-id">{cs.model}</span>
-                              </div>
-                              {isSelected && <Check size={14} weight="bold" />}
-                            </button>
-                          )
-                        })}
-                      </div>
+                    {configuredSources.length === 0 && (
+                      <p className="empty-models-hint">
+                        No custom models added yet. Click below to add your models.
+                      </p>
                     )}
                   </div>
 
@@ -328,8 +284,8 @@ export function Composer({
                           onOpenModelSettings()
                         }}
                       >
-                        <Gear size={14} />
-                        <span>Manage API Keys & Sources</span>
+                        <Plus size={14} weight="bold" />
+                        <span>Add / Manage Models & API Keys</span>
                       </button>
                     </div>
                   )}

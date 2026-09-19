@@ -8,14 +8,16 @@ import {
   Trash,
   GlobeHemisphereWest,
   Sparkle,
+  PencilSimple,
 } from '@phosphor-icons/react'
-import type { CustomSource, LLMConfig, LLMProviderType } from '../../types'
+import type { LLMConfig, LLMProviderType, ModelSource } from '../../types'
 import { DEFAULT_LLM_CONFIG } from '../../types'
 import {
-  PROVIDER_PRESETS,
-  activateLLMModel,
-  isProviderReady,
-  updateProviderCredentials,
+  PROVIDER_METAS,
+  activateLLMSource,
+  addLLMSource,
+  deleteLLMSource,
+  updateLLMSource,
 } from '../../lib/llmProviders'
 
 export interface ModelPaneProps {
@@ -31,106 +33,101 @@ export function ModelPane({
   numResults = 5,
   onNumResultsChange,
 }: ModelPaneProps) {
-  const [selectedProviderTab, setSelectedProviderTab] = useState<LLMProviderType>(
-    (config.provider === 'custom' ? 'openai' : config.provider) || 'openai'
-  )
   const [showKey, setShowKey] = useState(false)
   const [savedBadge, setSavedBadge] = useState(false)
 
-  // Custom source form state
-  const [isAddingCustom, setIsAddingCustom] = useState(false)
-  const [customName, setCustomName] = useState('')
-  const [customBaseUrl, setCustomBaseUrl] = useState('')
-  const [customApiKey, setCustomApiKey] = useState('')
-  const [customModel, setCustomModel] = useState('')
-  const [customProviderType, setCustomProviderType] = useState<LLMProviderType>('custom')
-  const [customFormError, setCustomFormError] = useState('')
+  // Add / Edit form state
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [sourceName, setSourceName] = useState('')
+  const [sourceProvider, setSourceProvider] = useState<LLMProviderType>('openai')
+  const [sourceModel, setSourceModel] = useState('')
+  const [sourceApiKey, setSourceApiKey] = useState('')
+  const [sourceBaseUrl, setSourceBaseUrl] = useState('')
+  const [formError, setFormError] = useState('')
 
   const flashSaved = () => {
     setSavedBadge(true)
     setTimeout(() => setSavedBadge(false), 1500)
   }
 
-  const activePreset =
-    PROVIDER_PRESETS.find((p) => p.id === selectedProviderTab) ?? PROVIDER_PRESETS[1]
+  const selectedMeta = PROVIDER_METAS.find((p) => p.id === sourceProvider) ?? PROVIDER_METAS[0]
 
-  const currentCreds = config.providers?.[selectedProviderTab] || {
-    apiKey: '',
-    baseUrl: activePreset.defaultBaseUrl,
-    model: activePreset.defaultModel,
+  const handleProviderSelect = (provider: LLMProviderType) => {
+    setSourceProvider(provider)
+    const meta = PROVIDER_METAS.find((p) => p.id === provider)
+    if (meta && meta.defaultBaseUrl && !sourceBaseUrl) {
+      setSourceBaseUrl(meta.defaultBaseUrl)
+    }
   }
 
-  const handleKeyChange = (apiKey: string) => {
-    const updated = updateProviderCredentials(config, selectedProviderTab, { apiKey })
-    onChange(updated)
-    flashSaved()
+  const openAddForm = () => {
+    setEditingId(null)
+    setSourceName('')
+    setSourceProvider('openai')
+    setSourceModel('')
+    setSourceApiKey('')
+    setSourceBaseUrl(PROVIDER_METAS[0].defaultBaseUrl)
+    setFormError('')
+    setIsFormOpen(true)
   }
 
-  const handleBaseUrlChange = (baseUrl: string) => {
-    const updated = updateProviderCredentials(config, selectedProviderTab, { baseUrl })
-    onChange(updated)
-    flashSaved()
+  const openEditForm = (source: ModelSource) => {
+    setEditingId(source.id)
+    setSourceName(source.name)
+    setSourceProvider(source.provider)
+    setSourceModel(source.model)
+    setSourceApiKey(source.apiKey || '')
+    setSourceBaseUrl(source.baseUrl || '')
+    setFormError('')
+    setIsFormOpen(true)
   }
 
-  const handleModelChange = (model: string) => {
-    const updated = updateProviderCredentials(config, selectedProviderTab, { model })
-    onChange(updated)
-    flashSaved()
-  }
-
-  const handleActivateProvider = (providerId: string, modelName?: string) => {
-    const updated = activateLLMModel(config, providerId, modelName)
-    onChange(updated)
-    flashSaved()
-  }
-
-  const handleAddCustomSource = () => {
-    if (!customName.trim()) {
-      setCustomFormError('Please enter a source name.')
+  const handleSaveSource = () => {
+    if (!sourceName.trim()) {
+      setFormError('Please enter a display name for this model source.')
       return
     }
-    if (!customBaseUrl.trim()) {
-      setCustomFormError('Please enter a valid Base URL endpoint.')
-      return
-    }
-    if (!customModel.trim()) {
-      setCustomFormError('Please enter the model name.')
+    if (!sourceModel.trim()) {
+      setFormError('Please enter the model name explicitly.')
       return
     }
 
-    const newSource: CustomSource = {
-      id: `custom_${Date.now()}`,
-      name: customName.trim(),
-      provider: customProviderType,
-      baseUrl: customBaseUrl.trim(),
-      apiKey: customApiKey.trim() || undefined,
-      model: customModel.trim(),
+    if (editingId) {
+      const updated: ModelSource = {
+        id: editingId,
+        name: sourceName.trim(),
+        provider: sourceProvider,
+        model: sourceModel.trim(),
+        apiKey: sourceApiKey.trim() || undefined,
+        baseUrl: sourceBaseUrl.trim() || undefined,
+      }
+      onChange(updateLLMSource(config, updated))
+    } else {
+      onChange(
+        addLLMSource(config, {
+          name: sourceName.trim(),
+          provider: sourceProvider,
+          model: sourceModel.trim(),
+          apiKey: sourceApiKey.trim() || undefined,
+          baseUrl: sourceBaseUrl.trim() || undefined,
+        })
+      )
     }
 
-    const nextCustomSources = [...(config.customSources || []), newSource]
-    const updated = activateLLMModel(
-      { ...config, customSources: nextCustomSources },
-      newSource.id
-    )
-    onChange(updated)
-
-    // Reset form
-    setCustomName('')
-    setCustomBaseUrl('')
-    setCustomApiKey('')
-    setCustomModel('')
-    setIsAddingCustom(false)
-    setCustomFormError('')
+    setIsFormOpen(false)
+    setEditingId(null)
+    setFormError('')
     flashSaved()
   }
 
-  const handleDeleteCustomSource = (id: string) => {
-    const nextSources = (config.customSources || []).filter((s) => s.id !== id)
-    let nextConfig: LLMConfig = { ...config, customSources: nextSources }
-    if (config.activeSourceId === id) {
-      nextConfig = activateLLMModel(nextConfig, 'default')
-    }
-    onChange(nextConfig)
+  const handleDeleteSource = (id: string) => {
+    onChange(deleteLLMSource(config, id))
+    flashSaved()
+  }
+
+  const handleActivateSource = (id: string) => {
+    onChange(activateLLMSource(config, id))
     flashSaved()
   }
 
@@ -139,16 +136,14 @@ export function ModelPane({
     flashSaved()
   }
 
-  const customSourcesList = config.customSources || []
-
   return (
     <div className="settings-model-pane">
       <div className="settings-lead-row">
         <div>
           <h3 className="settings-section-title">Models & AI Sources</h3>
           <p className="settings-lead">
-            Add multiple model providers and custom OpenAI-compatible endpoints. Configure keys
-            once, switch models instantly during chat.
+            Add your own model sources with your API keys and custom model names.
+            Switch models instantly during chat.
           </p>
         </div>
         {savedBadge && (
@@ -158,235 +153,136 @@ export function ModelPane({
         )}
       </div>
 
-      {/* Currently Active Summary Card */}
+      {/* Active Model Card */}
       <div className="active-model-card">
         <div className="active-model-card-info">
           <span className="active-model-tag">
             <Sparkle size={13} weight="fill" /> Active Model
           </span>
           <span className="active-model-title">
-            {config.activeModelLabel || (config.provider === 'default' ? 'Server Default' : `${config.provider} (${config.model})`)}
+            {config.activeModelLabel || 'Server Default'}
           </span>
         </div>
         {config.activeSourceId !== 'default' && (
           <button
             type="button"
             className="settings-button ghost btn-sm"
-            onClick={() => handleActivateProvider('default')}
-            title="Reset to server default model"
+            onClick={() => handleActivateSource('default')}
+            title="Reset to server default model from .env"
           >
             <ArrowCounterClockwise size={13} />
-            Use Default
+            Use Server Default
           </button>
         )}
       </div>
 
-      {/* Provider Selector Tabs / Grid */}
-      <div className="provider-grid">
-        {PROVIDER_PRESETS.filter((p) => p.id !== 'default').map((preset) => {
-          const isConfigured = isProviderReady(config, preset.id)
-          const isCurrentActive = config.activeSourceId === preset.id
-          const isTabOpen = selectedProviderTab === preset.id
-
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              className={`provider-card${isTabOpen ? ' selected' : ''}${isCurrentActive ? ' is-active' : ''}`}
-              onClick={() => setSelectedProviderTab(preset.id)}
-            >
-              <div className="provider-card-top">
-                <span className="provider-card-name">{preset.name}</span>
-                {isCurrentActive ? (
-                  <span className="badge-active">Active</span>
-                ) : isConfigured ? (
-                  <span className="badge-ready">Ready</span>
-                ) : (
-                  <span className="badge-unconfigured">Key needed</span>
-                )}
-              </div>
-              <span className="provider-card-desc">{preset.defaultModel || 'Configurable'}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Active Provider Configuration Box */}
-      <div className="provider-config-box">
-        <div className="provider-config-header">
-          <div>
-            <h4 className="provider-config-title">{activePreset.name} Configuration</h4>
-            <p className="settings-hint">{activePreset.description}</p>
-          </div>
-          {config.activeSourceId !== activePreset.id && (
-            <button
-              type="button"
-              className="settings-button primary btn-sm"
-              onClick={() => handleActivateProvider(activePreset.id)}
-            >
-              Set Active
-            </button>
-          )}
-        </div>
-
-        {activePreset.needsKey && (
-          <div className="field">
-            <label htmlFor="settings-llm-key">{activePreset.name} API Key</label>
-            <div className="password-input-wrapper">
-              <input
-                id="settings-llm-key"
-                type={showKey ? 'text' : 'password'}
-                value={currentCreds.apiKey || ''}
-                placeholder={`Enter your ${activePreset.name} API key`}
-                onChange={(e) => handleKeyChange(e.target.value)}
-                autoComplete="off"
-                spellCheck="false"
-              />
-              <button
-                type="button"
-                className="password-toggle-btn"
-                onClick={() => setShowKey(!showKey)}
-                aria-label={showKey ? 'Hide key' : 'Show key'}
-                title={showKey ? 'Hide key' : 'Show key'}
-              >
-                {showKey ? <EyeSlash size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="field">
-          <label htmlFor="settings-llm-baseurl">API Base URL</label>
-          <input
-            id="settings-llm-baseurl"
-            type="text"
-            value={currentCreds.baseUrl || ''}
-            placeholder={activePreset.defaultBaseUrl || 'https://...'}
-            onChange={(e) => handleBaseUrlChange(e.target.value)}
-            spellCheck="false"
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="settings-llm-model">Default Model</label>
-          <input
-            id="settings-llm-model"
-            type="text"
-            value={currentCreds.model || ''}
-            placeholder={activePreset.defaultModel || 'Model identifier'}
-            onChange={(e) => handleModelChange(e.target.value)}
-            spellCheck="false"
-          />
-          {activePreset.models.length > 0 && (
-            <div className="model-suggestions">
-              <span className="model-suggestions-label">Popular models:</span>
-              <div className="model-chip-group">
-                {activePreset.models.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`model-chip${currentCreds.model === m ? ' active' : ''}`}
-                    onClick={() => {
-                      handleModelChange(m)
-                      if (config.activeSourceId === activePreset.id) {
-                        handleActivateProvider(activePreset.id, m)
-                      }
-                    }}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Custom Sources Section */}
+      {/* Model Sources List */}
       <div className="custom-sources-section">
         <div className="section-head-row">
           <div>
-            <h4 className="settings-sub-title">Custom Endpoints & Sources</h4>
+            <h4 className="settings-sub-title">Configured Models ({config.sources.length})</h4>
             <p className="settings-hint">
-              Connect private LLMs, vLLM, LM Studio, LocalAI, or custom OpenAI proxies.
+              Add as many models as you need from OpenAI, Claude, OpenRouter, Groq, Ollama, or custom endpoints.
             </p>
           </div>
-          {!isAddingCustom && (
+          {!isFormOpen && (
             <button
               type="button"
-              className="settings-button secondary btn-sm"
-              onClick={() => setIsAddingCustom(true)}
+              className="settings-button primary btn-sm"
+              onClick={openAddForm}
             >
-              <Plus size={14} weight="bold" /> Add Custom Source
+              <Plus size={14} weight="bold" /> Add Model
             </button>
           )}
         </div>
 
-        {isAddingCustom && (
+        {/* Add / Edit Form */}
+        {isFormOpen && (
           <div className="custom-source-form">
-            <h5 className="custom-form-title">New Custom AI Source</h5>
-            {customFormError && <div className="form-error-banner">{customFormError}</div>}
+            <h5 className="custom-form-title">
+              {editingId ? 'Edit Model Source' : 'Add New Model Source'}
+            </h5>
+            {formError && <div className="form-error-banner">{formError}</div>}
+
             <div className="field-row">
               <div className="field">
-                <label htmlFor="custom-src-name">Source Name</label>
+                <label htmlFor="model-src-name">Display Name</label>
                 <input
-                  id="custom-src-name"
+                  id="model-src-name"
                   type="text"
-                  placeholder="e.g. My Local vLLM, Work Proxy"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="e.g. My Fast Model, Claude Research"
+                  value={sourceName}
+                  onChange={(e) => setSourceName(e.target.value)}
                 />
               </div>
               <div className="field">
-                <label htmlFor="custom-src-provider">API Format</label>
+                <label htmlFor="model-src-provider">Provider</label>
                 <select
-                  id="custom-src-provider"
-                  value={customProviderType}
-                  onChange={(e) => setCustomProviderType(e.target.value as LLMProviderType)}
+                  id="model-src-provider"
+                  value={sourceProvider}
+                  onChange={(e) => handleProviderSelect(e.target.value as LLMProviderType)}
                 >
-                  <option value="custom">OpenAI Compatible (Default)</option>
-                  <option value="openai">OpenAI Official</option>
-                  <option value="anthropic">Anthropic Claude</option>
-                  <option value="openrouter">OpenRouter</option>
+                  {PROVIDER_METAS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
             <div className="field">
-              <label htmlFor="custom-src-url">Endpoint Base URL</label>
+              <label htmlFor="model-src-model">
+                Model Name <span style={{ color: 'var(--accent)' }}>*</span>
+              </label>
               <input
-                id="custom-src-url"
+                id="model-src-model"
                 type="text"
-                placeholder="http://localhost:8000/v1 or https://..."
-                value={customBaseUrl}
-                onChange={(e) => setCustomBaseUrl(e.target.value)}
+                placeholder="Enter exact model name (e.g. your model identifier)"
+                value={sourceModel}
+                onChange={(e) => setSourceModel(e.target.value)}
                 spellCheck="false"
               />
+              <p className="settings-hint">
+                Specify the exact model identifier to request from the provider.
+              </p>
             </div>
 
-            <div className="field-row">
+            {selectedMeta.needsKey && (
               <div className="field">
-                <label htmlFor="custom-src-model">Model Name / ID</label>
-                <input
-                  id="custom-src-model"
-                  type="text"
-                  placeholder="e.g. deepseek-ai/DeepSeek-R1"
-                  value={customModel}
-                  onChange={(e) => setCustomModel(e.target.value)}
-                  spellCheck="false"
-                />
+                <label htmlFor="model-src-key">{selectedMeta.name} API Key</label>
+                <div className="password-input-wrapper">
+                  <input
+                    id="model-src-key"
+                    type={showKey ? 'text' : 'password'}
+                    placeholder={`Enter your ${selectedMeta.name} API key`}
+                    value={sourceApiKey}
+                    onChange={(e) => setSourceApiKey(e.target.value)}
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle-btn"
+                    onClick={() => setShowKey(!showKey)}
+                    aria-label={showKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showKey ? <EyeSlash size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="custom-src-key">API Key (Optional)</label>
-                <input
-                  id="custom-src-key"
-                  type="password"
-                  placeholder="Optional token or key"
-                  value={customApiKey}
-                  onChange={(e) => setCustomApiKey(e.target.value)}
-                  spellCheck="false"
-                />
-              </div>
+            )}
+
+            <div className="field">
+              <label htmlFor="model-src-baseurl">API Base URL (Optional)</label>
+              <input
+                id="model-src-baseurl"
+                type="text"
+                placeholder={selectedMeta.defaultBaseUrl || 'https://...'}
+                value={sourceBaseUrl}
+                onChange={(e) => setSourceBaseUrl(e.target.value)}
+                spellCheck="false"
+              />
             </div>
 
             <div className="form-actions-row">
@@ -394,8 +290,9 @@ export function ModelPane({
                 type="button"
                 className="settings-button ghost btn-sm"
                 onClick={() => {
-                  setIsAddingCustom(false)
-                  setCustomFormError('')
+                  setIsFormOpen(false)
+                  setEditingId(null)
+                  setFormError('')
                 }}
               >
                 Cancel
@@ -403,45 +300,57 @@ export function ModelPane({
               <button
                 type="button"
                 className="settings-button primary btn-sm"
-                onClick={handleAddCustomSource}
+                onClick={handleSaveSource}
               >
-                Save & Activate Source
+                {editingId ? 'Save Changes' : 'Add Model'}
               </button>
             </div>
           </div>
         )}
 
-        {customSourcesList.length > 0 ? (
+        {/* List of configured sources */}
+        {config.sources.length > 0 ? (
           <div className="custom-sources-list">
-            {customSourcesList.map((cs) => {
-              const isActive = config.activeSourceId === cs.id
+            {config.sources.map((src) => {
+              const isActive = config.activeSourceId === src.id
               return (
-                <div key={cs.id} className={`custom-source-item${isActive ? ' active' : ''}`}>
+                <div key={src.id} className={`custom-source-item${isActive ? ' active' : ''}`}>
                   <div className="custom-source-info">
                     <div className="custom-source-title-row">
-                      <span className="custom-source-name">{cs.name}</span>
+                      <span className="custom-source-name">{src.name}</span>
+                      <span className="badge-ready">{src.provider}</span>
                       {isActive && <span className="badge-active">Active</span>}
                     </div>
                     <span className="custom-source-endpoint">
-                      <code>{cs.baseUrl}</code> &bull; <span>{cs.model}</span>
+                      Model: <strong>{src.model}</strong>
+                      {src.baseUrl && <span> &bull; <code>{src.baseUrl}</code></span>}
                     </span>
                   </div>
                   <div className="custom-source-actions">
-                    {!isActive ? (
+                    {!isActive && (
                       <button
                         type="button"
                         className="settings-button secondary btn-sm"
-                        onClick={() => handleActivateProvider(cs.id, cs.model)}
+                        onClick={() => handleActivateSource(src.id)}
                       >
-                        Activate
+                        Set Active
                       </button>
-                    ) : null}
+                    )}
                     <button
                       type="button"
                       className="icon-delete-btn"
-                      onClick={() => handleDeleteCustomSource(cs.id)}
-                      title="Delete source"
-                      aria-label="Delete source"
+                      onClick={() => openEditForm(src)}
+                      title="Edit model"
+                      aria-label="Edit model"
+                    >
+                      <PencilSimple size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-delete-btn"
+                      onClick={() => handleDeleteSource(src.id)}
+                      title="Delete model"
+                      aria-label="Delete model"
                     >
                       <Trash size={15} />
                     </button>
@@ -451,20 +360,22 @@ export function ModelPane({
             })}
           </div>
         ) : (
-          !isAddingCustom && (
-            <p className="empty-sources-hint">No custom sources added yet.</p>
+          !isFormOpen && (
+            <p className="empty-sources-hint">
+              No custom models added yet. Click &quot;Add Model&quot; to configure your API keys and models.
+            </p>
           )
         )}
       </div>
 
-      {/* Search Sources Count (Perplexity-style source scalability) */}
+      {/* Search Sources Scalability */}
       {onNumResultsChange && (
         <div className="search-sources-section">
           <div className="section-head-row">
             <div>
               <h4 className="settings-sub-title">Search Sources Count</h4>
               <p className="settings-hint">
-                How many live web sources Verixa retrieves and synthesizes for each question.
+                Number of web search sources retrieved and synthesized for each query.
               </p>
             </div>
           </div>
@@ -494,7 +405,7 @@ export function ModelPane({
           onClick={handleReset}
         >
           <ArrowCounterClockwise size={15} />
-          Reset All to Server Default
+          Reset to Server Default
         </button>
       </div>
     </div>
