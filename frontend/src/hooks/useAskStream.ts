@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { API_URL } from '../api'
+import { API_URL, syncThread } from '../api'
 import type { Session } from '../api'
 import { normalizeCitations } from '../markdown'
 import type { AskMode, Prefs, Profile, Source, Thread, Turn } from '../types'
 import { errorMessage } from '../lib/storage'
 import { isSource } from '../lib/normalize'
+
 
 export type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'researching' | 'done'
 
@@ -307,6 +308,24 @@ export function useAskStream({
     setOpenSources((prev) => (prev === key ? null : key))
   }
 
+  function clearForOpen(): void {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setQuery('')
+    setAsked('')
+    setAnswer('')
+    setSources([])
+    setError('')
+    setCopiedKey(null)
+    setOpenSources(null)
+    setResolvedQuery('')
+    setRelated([])
+    setSteps([])
+    setPhase('done')
+  }
+
   async function shareThread(thread: Thread | undefined): Promise<void> {
     if (!thread) return
     if (incognito) {
@@ -315,7 +334,6 @@ export function useAskStream({
       return
     }
     try {
-      const { syncThread } = await import('../api')
       await syncThread(thread, session?.token)
       await navigator.clipboard.writeText(`${window.location.origin}/t/${thread.id}`)
       setShareState('copied')
@@ -324,8 +342,13 @@ export function useAskStream({
     }
   }
 
+  const streaming = answer !== '' && phase !== 'done'
+  const displayAnswer = normalizeCitations(answer)
+
   return {
     loading,
+    streaming,
+    displayAnswer,
     phase,
     answer,
     sources,
@@ -342,6 +365,7 @@ export function useAskStream({
     runAsk,
     stopAsk,
     reset,
+    clearForOpen,
     copyAnswer,
     toggleSources,
     shareThread,
@@ -363,3 +387,4 @@ export function useAskStream({
 }
 
 export default useAskStream
+

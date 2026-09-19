@@ -12,6 +12,19 @@ export function isSource(value: unknown): value is Source {
   )
 }
 
+export function collectSources(turns: Turn[], currentSources: Source[] = []): Source[] {
+  const combined = [...turns.flatMap((t) => t.sources), ...currentSources]
+  const map = new Map<string, Source>()
+  for (const s of combined) {
+    const k = s.url || String(s.id)
+    if (!map.has(k)) {
+      map.set(k, s)
+    }
+  }
+  return Array.from(map.values())
+}
+
+
 export function normalizeThread(value: unknown): Thread | null {
   if (typeof value !== 'object' || value === null) return null
   const t = value as Record<string, unknown>

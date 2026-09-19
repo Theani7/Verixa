@@ -42,6 +42,35 @@ export function errorMessage(err: unknown): string {
   return 'Something went wrong while asking.'
 }
 
+export function persistAskMode(mode: AskMode): void {
+  try {
+    localStorage.setItem(MODE_KEY, mode)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function persistCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'open')
+  } catch {
+    /* ignore */
+  }
+}
+
+export function persistIncognito(incognito: boolean): void {
+  try {
+    if (incognito) {
+      sessionStorage.setItem(INCOGNITO_KEY, 'on')
+    } else {
+      sessionStorage.removeItem(INCOGNITO_KEY)
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function formatSecs(ms: number): string {
   return `${Math.max(1, Math.round(ms / 1000))}s`
 }
+

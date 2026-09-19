@@ -1,9 +1,7 @@
 import { Flask, Sparkle, Timer } from '@phosphor-icons/react'
 import type { Turn } from '../types'
+import { formatSecs } from '../lib/storage'
 
-export function formatSecs(ms: number): string {
-  return `${Math.max(1, Math.round(ms / 1000))}s`
-}
 
 export interface AnswerHeaderProps {
   mode: Turn['mode']

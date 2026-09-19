@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Thread, Turn } from '../types'
-import { syncThread } from '../api'
+import { deleteSharedThread, syncThread } from '../api'
 import { LEGACY_STORAGE_KEY, MAX_THREADS, STORAGE_KEY, newId } from '../lib/storage'
 import { normalizeThread } from '../lib/normalize'
 
@@ -62,10 +62,10 @@ export interface ThreadGroup {
   items: Thread[]
 }
 
-export function useThreadStore(incognito: boolean, token: string | null) {
+export function useThreadStore(incognito: boolean, token?: string | null) {
   const [threads, setThreads] = useState<Thread[]>(loadThreads)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState(false)
+  const [turns, setTurns] = useState<Turn[]>([])
   const incognitoThreadIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
@@ -73,15 +73,21 @@ export function useThreadStore(incognito: boolean, token: string | null) {
     saveThreads(threads)
   }, [threads, incognito])
 
+  const activeThread = useMemo(
+    () => threads.find((x) => x.id === activeId),
+    [threads, activeId],
+  )
+
   const persistTurn = useCallback(
     (turn: Turn): void => {
+      setTurns((prev) => [...prev, turn])
       if (activeId) {
         const next = threads.map((t) =>
           t.id === activeId ? { ...t, turns: [...t.turns, turn], ts: Date.now() } : t,
         )
         setThreads(next)
         const updated = next.find((t) => t.id === activeId)
-        if (updated && !incognito) syncThread(updated, token).catch(() => undefined)
+        if (updated && !incognito) syncThread(updated, token ?? undefined).catch(() => undefined)
       } else {
         const thread: Thread = {
           id: newId(),
@@ -94,42 +100,64 @@ export function useThreadStore(incognito: boolean, token: string | null) {
         if (incognito) {
           incognitoThreadIds.current.add(thread.id)
         } else {
-          syncThread(thread, token).catch(() => undefined)
+          syncThread(thread, token ?? undefined).catch(() => undefined)
         }
       }
     },
     [threads, activeId, incognito, token],
   )
 
+  const openThread = useCallback(
+    (id: string): Thread | undefined => {
+      const t = threads.find((x) => x.id === id)
+      if (!t) return undefined
+      setActiveId(t.id)
+      setTurns(t.turns)
+      return t
+    },
+    [threads],
+  )
+
+  const resetThread = useCallback((): void => {
+    setActiveId(null)
+    setTurns([])
+  }, [])
+
+  const deleteThread = useCallback(
+    (id: string): void => {
+      setThreads((prev) => prev.filter((t) => t.id !== id))
+      deleteSharedThread(id, token ?? undefined).catch(() => undefined)
+      if (id === activeId) {
+        resetThread()
+      }
+    },
+    [activeId, resetThread, token],
+  )
+
   const dropIncognitoThreads = useCallback((): void => {
     const ids = incognitoThreadIds.current
     setThreads((prev) => prev.filter((t) => !ids.has(t.id)))
     setActiveId((prev) => (prev && ids.has(prev) ? null : prev))
+    if (activeId && ids.has(activeId)) {
+      setTurns([])
+    }
     incognitoThreadIds.current = new Set()
-  }, [])
-
-  const toggleIncognito = useCallback(
-    (next: boolean, onEnter: () => void, onLeave: () => void): void => {
-      if (next) {
-        onEnter()
-      } else {
-        dropIncognitoThreads()
-        onLeave()
-      }
-    },
-    [dropIncognitoThreads],
-  )
+  }, [activeId])
 
   return {
     threads,
     setThreads,
     activeId,
     setActiveId,
-    collapsed,
-    setCollapsed,
+    turns,
+    setTurns,
+    activeThread,
     persistTurn,
+    openThread,
+    resetThread,
+    deleteThread,
     dropIncognitoThreads,
-    toggleIncognito,
     incognitoThreadIds,
   }
 }
+
