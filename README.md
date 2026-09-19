@@ -1,8 +1,38 @@
 # Verixa
 
-Verixa is a Perplexity-style answer engine that combines live web retrieval with large-language-model synthesis. It searches the web through Exa, generates cited answers with Groq and LangChain, and presents the result through a responsive React interface with server-sent event (SSE) streaming.
+[![CI](https://github.com/Theani7/Verixa/actions/workflows/ci.yml/badge.svg)](https://github.com/Theani7/Verixa/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
+[![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
+[![Bun](https://img.shields.io/badge/Bun-1.2+-fbf0df.svg)](https://bun.sh/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ed.svg)](https://www.docker.com/)
+
+Verixa is an open-source, Perplexity-style answer engine that combines live web retrieval with large-language-model synthesis. It supports multiple LLM providers (**Groq**, **Ollama**, and **OpenAI-compatible endpoints**), live web search via Exa, and presents answers through a responsive React interface with server-sent event (SSE) streaming.
 
 The repository directory is named `Seekora`; the application and product name are **Verixa**.
+
+## 🚀 Quickstart with Docker
+
+The fastest way to run Verixa locally with PostgreSQL (pgvector), FastAPI backend, and React frontend:
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Theani7/Verixa.git
+   cd Verixa
+   ```
+
+2. **Configure your environment**:
+   ```bash
+   cp .env.example .env
+   ```
+   Add your `GROQ_API_KEY` (or configure `LLM_PROVIDER=ollama`) and `EXA_API_KEY` in `.env`.
+
+3. **Start the stack**:
+   ```bash
+   docker compose up -d
+   ```
+
+4. Open **`http://localhost:5173`** in your browser. The API and docs are accessible at `http://localhost:8000/docs`.
 
 ## Features
 
@@ -198,10 +228,16 @@ Edit `.env` and configure these variables:
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `EXA_API_KEY` | For search and deep modes | None | Authenticates Exa web searches |
-| `GROQ_API_KEY` | For all LLM paths | None | Authenticates Groq model requests |
+| `LLM_PROVIDER` | No | `groq` | Choose `groq`, `ollama`, `openai`, or `custom` |
+| `GROQ_API_KEY` | If using Groq | None | Authenticates Groq model requests |
+| `GROQ_MODEL` | No | `openai/gpt-oss-120b` | Model identifier for Groq |
+| `OLLAMA_BASE_URL` | If using Ollama | `http://localhost:11434/v1` | Base URL for local Ollama instance |
+| `OLLAMA_MODEL` | No | `llama3` | Model name pulled in Ollama |
+| `OPENAI_API_KEY` | If using OpenAI | None | Authenticates OpenAI requests |
+| `OPENAI_BASE_URL` | No | None | Custom base URL for vLLM, LM Studio, etc. |
+| `EXA_API_KEY` | For search & deep modes | None | Authenticates Exa web searches |
 | `DATABASE_URL` | Yes | `postgresql+psycopg://verixa:verixa@localhost:5432/verixa` | Selects the PostgreSQL database |
-| `SECRET_KEY` | Yes outside local development | `dev-secret-change-me` | Signs and verifies JWT sessions |
+| `SECRET_KEY` | Yes outside local dev | `dev-secret-change-me` | Signs and verifies JWT sessions |
 | `VITE_API_URL` | Frontend only | `http://localhost:8000` | Points the Vite client at the API |
 
 Generate a production-safe signing key:
