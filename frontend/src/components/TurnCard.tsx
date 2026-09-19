@@ -8,22 +8,22 @@ import { ActionBar } from './ActionBar'
 export interface TurnCardProps {
   turn: Turn
   turnIndex: number
-  copiedKey: string | null
-  openSources: string | null
-  shareState: 'idle' | 'copied' | 'failed'
-  onCopy: (text: string, key: string) => void
-  onShare: () => void
-  onNewThread: () => void
-  onToggleSources: (key: string) => void
-  onAskRelated: (query: string) => void
+  copiedKey?: string | null
+  openSources?: string | null
+  shareState?: 'idle' | 'copied' | 'failed'
+  onCopy?: (text: string, key: string) => void
+  onShare?: () => void
+  onNewThread?: () => void
+  onToggleSources?: (key: string) => void
+  onAskRelated?: (query: string) => void
 }
 
 export function TurnCard({
   turn,
   turnIndex,
-  copiedKey,
-  openSources,
-  shareState,
+  copiedKey = null,
+  openSources = null,
+  shareState = 'idle',
   onCopy,
   onShare,
   onNewThread,
@@ -64,10 +64,10 @@ export function TurnCard({
           shareState={shareState}
           sources={turn.sources}
           sourcesOpen={isSourcesOpen}
-          onCopy={() => onCopy(turn.answer, key)}
+          onCopy={onCopy ? () => onCopy(turn.answer, key) : undefined}
           onShare={onShare}
           onNewThread={onNewThread}
-          onToggleSources={() => onToggleSources(key)}
+          onToggleSources={onToggleSources ? () => onToggleSources(key) : undefined}
         />
 
         {isSourcesOpen && turn.sources.length > 0 && (
@@ -77,21 +77,23 @@ export function TurnCard({
                 <GlobeHemisphereWest size={15} aria-hidden="true" />
                 <span>Sources ({turn.sources.length})</span>
               </span>
-              <button
-                type="button"
-                className="sources-drawer-close"
-                onClick={() => onToggleSources(key)}
-                aria-label="Close sources drawer"
-                title="Close"
-              >
-                <X size={15} />
-              </button>
+              {onToggleSources && (
+                <button
+                  type="button"
+                  className="sources-drawer-close"
+                  onClick={() => onToggleSources(key)}
+                  aria-label="Close sources drawer"
+                  title="Close"
+                >
+                  <X size={15} />
+                </button>
+              )}
             </div>
             <SourceList prefix={`${key}-`} sources={turn.sources} />
           </div>
         )}
 
-        {turn.related.length > 0 && (
+        {onAskRelated && turn.related.length > 0 && (
           <section className="related rise" aria-label="Related questions">
             <p className="related-label">
               <ArrowBendDownRight size={15} aria-hidden="true" />

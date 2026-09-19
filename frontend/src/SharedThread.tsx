@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import { LinkSimple } from '@phosphor-icons/react'
 import './App.css'
 import { fetchSharedThread } from './api'
-import { SourceList } from './article'
-import { renderRich } from './markdown'
+import { TurnCard } from './components/TurnCard'
 import type { Thread } from './types'
 
 function withDefaults(thread: Thread): Thread {
@@ -21,6 +20,9 @@ function withDefaults(thread: Thread): Thread {
 export default function SharedThread({ id }: { id: string }) {
   const [thread, setThread] = useState<Thread | null>(null)
   const [missing, setMissing] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [openSources, setOpenSources] = useState<string | null>(null)
+  const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   useEffect(() => {
     document.title = 'Shared thread - Verixa'
@@ -38,6 +40,27 @@ export default function SharedThread({ id }: { id: string }) {
       live = false
     }
   }, [id])
+
+  const copyTurn = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2000)
+    })
+  }
+
+  const toggleSources = (key: string) => {
+    setOpenSources((prev) => (prev === key ? null : key))
+  }
+
+  const shareThread = () => {
+    navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => {
+        setShareState('copied')
+        setTimeout(() => setShareState('idle'), 2000)
+      })
+      .catch(() => setShareState('failed'))
+  }
 
   return (
     <div className="shell">
@@ -73,25 +96,22 @@ export default function SharedThread({ id }: { id: string }) {
             Shared thread
           </p>
           <h1 className="shared-title">{thread.title}</h1>
-          {thread.turns.map((turn, ti) => {
-            const prefix = `s${ti}-`
-            return (
-              <div className="turn" key={prefix}>
-                <div className="bubble-row">
-                  <h2 className="user-bubble">{turn.query}</h2>
-                </div>
-                <div className="answer-body">
-                  {renderRich(turn.answer, prefix, turn.sources)}
-                </div>
-                {turn.sources.length > 0 && (
-                  <section aria-label="Sources">
-                    <p className="shared-sources-label">Sources</p>
-                    <SourceList prefix={prefix} sources={turn.sources} />
-                  </section>
-                )}
-              </div>
-            )
-          })}
+          {thread.turns.map((turn, ti) => (
+            <TurnCard
+              key={`t${ti}`}
+              turn={turn}
+              turnIndex={ti}
+              copiedKey={copiedKey}
+              openSources={openSources}
+              shareState={shareState}
+              onCopy={copyTurn}
+              onShare={shareThread}
+              onNewThread={() => {
+                window.location.href = '/'
+              }}
+              onToggleSources={toggleSources}
+            />
+          ))}
           <footer className="footer">
             Shared from Verixa. Answers were generated from live web sources.
           </footer>
