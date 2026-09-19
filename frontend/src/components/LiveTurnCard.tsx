@@ -81,6 +81,7 @@ export function LiveTurnCard({
             resolved={resolvedQuery}
             steps={steps}
             sources={sources}
+            mode={askMode}
           />
         )}
 
