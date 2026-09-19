@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Brain, Cpu, Sparkle, UserCircle, X } from '@phosphor-icons/react'
-import type { LLMConfig, Profile, Session } from '../types'
+import type { LLMConfig, Prefs, Profile, Session } from '../types'
 import { AccountPane } from './settings/AccountPane'
 import { PersonalizationPane } from './settings/PersonalizationPane'
 import { MemoryPane } from './settings/MemoryPane'
@@ -11,7 +11,7 @@ export type Category = 'account' | 'model' | 'personalization' | 'memory'
 
 export const CATEGORIES: Array<{ id: Category; label: string; icon: ReactNode }> = [
   { id: 'account', label: 'Account', icon: <UserCircle size={18} /> },
-  { id: 'model', label: 'Model & API', icon: <Cpu size={18} /> },
+  { id: 'model', label: 'Model & Sources', icon: <Cpu size={18} /> },
   { id: 'personalization', label: 'Personalization', icon: <Sparkle size={18} /> },
   { id: 'memory', label: 'Memory', icon: <Brain size={18} /> },
 ]
@@ -22,6 +22,9 @@ export interface SettingsModalProps {
   onProfile: (profile: Profile) => void
   llmConfig: LLMConfig
   onLlmConfig: (config: LLMConfig) => void
+  prefs?: Prefs
+  onPrefs?: (prefs: Prefs) => void
+  initialCategory?: Category
   onClose: () => void
   onSignOut: () => void
   onProfileSaved: (me: { full_name: string; username: string }) => void
@@ -34,12 +37,15 @@ export function SettingsModal({
   onProfile,
   llmConfig,
   onLlmConfig,
+  prefs,
+  onPrefs,
+  initialCategory = 'account',
   onClose,
   onSignOut,
   onProfileSaved,
   onOpenAuth,
 }: SettingsModalProps) {
-  const [category, setCategory] = useState<Category>('account')
+  const [category, setCategory] = useState<Category>(initialCategory)
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -102,7 +108,12 @@ export function SettingsModal({
               />
             )}
             {category === 'model' && (
-              <ModelPane config={llmConfig} onChange={onLlmConfig} />
+              <ModelPane
+                config={llmConfig}
+                onChange={onLlmConfig}
+                numResults={prefs?.numResults}
+                onNumResultsChange={(n) => onPrefs?.({ ...prefs!, numResults: n })}
+              />
             )}
             {category === 'personalization' && (
               <PersonalizationPane profile={profile} onProfile={onProfile} />

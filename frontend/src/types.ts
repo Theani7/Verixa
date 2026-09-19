@@ -93,11 +93,37 @@ export type LLMProviderType =
   | 'ollama'
   | 'custom'
 
+export interface ProviderCredentials {
+  apiKey?: string
+  baseUrl?: string
+  model?: string
+}
+
+export interface CustomSource {
+  id: string
+  name: string
+  provider: LLMProviderType
+  baseUrl: string
+  apiKey?: string
+  model: string
+}
+
 export interface LLMConfig {
   provider: LLMProviderType
   apiKey?: string
   baseUrl?: string
   model?: string
+  activeSourceId?: string // 'default', provider id, or custom source id
+  activeModelLabel?: string
+  providers?: {
+    openai?: ProviderCredentials
+    anthropic?: ProviderCredentials
+    openrouter?: ProviderCredentials
+    groq?: ProviderCredentials
+    ollama?: ProviderCredentials
+    [key: string]: ProviderCredentials | undefined
+  }
+  customSources?: CustomSource[]
 }
 
 export const DEFAULT_LLM_CONFIG: LLMConfig = {
@@ -105,8 +131,48 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   apiKey: '',
   baseUrl: '',
   model: '',
+  activeSourceId: 'default',
+  activeModelLabel: 'Server Default',
+  providers: {
+    openai: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    anthropic: { apiKey: '', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-3-5-sonnet-latest' },
+    openrouter: { apiKey: '', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.5-sonnet' },
+    groq: { apiKey: '', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+    ollama: { apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'llama3.2' },
+  },
+  customSources: [],
 }
 
 export const LLM_CONFIG_KEY = 'verixa.llm_config.v1'
+
+export function normalizeLLMConfig(saved: unknown): LLMConfig {
+  if (!saved || typeof saved !== 'object') {
+    return DEFAULT_LLM_CONFIG
+  }
+  const s = saved as Partial<LLMConfig>
+  const providers = {
+    ...DEFAULT_LLM_CONFIG.providers,
+    ...(s.providers || {}),
+  }
+  // If older config had an active provider key, preserve it
+  if (s.provider && s.provider !== 'default' && s.apiKey && !providers[s.provider]?.apiKey) {
+    providers[s.provider] = {
+      apiKey: s.apiKey,
+      baseUrl: s.baseUrl || providers[s.provider]?.baseUrl,
+      model: s.model || providers[s.provider]?.model,
+    }
+  }
+
+  const customSources = Array.isArray(s.customSources) ? s.customSources : []
+  const activeSourceId = s.activeSourceId || s.provider || 'default'
+
+  return {
+    ...DEFAULT_LLM_CONFIG,
+    ...s,
+    providers,
+    customSources,
+    activeSourceId,
+  }
+}
 
 

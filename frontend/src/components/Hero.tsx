@@ -1,5 +1,5 @@
 import { ArrowUpRight } from '@phosphor-icons/react'
-import type { AskMode, Profile } from '../types'
+import type { AskMode, LLMConfig, Profile } from '../types'
 import { Composer } from './Composer'
 
 export interface SuggestionItem {
@@ -38,6 +38,9 @@ export interface HeroProps {
   onMode: (mode: AskMode) => void
   onStop?: () => void
   onPickSuggestion: (text: string) => void
+  llmConfig?: LLMConfig
+  onSelectModel?: (sourceId: string, modelName?: string) => void
+  onOpenModelSettings?: () => void
 }
 
 export function Hero({
@@ -50,6 +53,9 @@ export function Hero({
   onMode,
   onStop,
   onPickSuggestion,
+  llmConfig,
+  onSelectModel,
+  onOpenModelSettings,
 }: HeroProps) {
   const firstName = profile.name.trim().split(/\s+/)[0] ?? ''
   const suggestions = heroSuggestions(profile)
@@ -74,6 +80,9 @@ export function Hero({
           onMode={onMode}
           onStop={loading ? onStop : undefined}
           placeholder="Ask anything..."
+          llmConfig={llmConfig}
+          onSelectModel={onSelectModel}
+          onOpenModelSettings={onOpenModelSettings}
         />
       </form>
       <ul className="suggest-list rise rise-3">

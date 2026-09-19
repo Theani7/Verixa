@@ -60,7 +60,7 @@ class CustomLLMConfig(BaseModel):
 class AskRequest(BaseModel):
     query: str
     history: list[HistoryTurn] = []
-    num_results: int | None = Field(default=None, ge=1, le=10)
+    num_results: int | None = Field(default=None, ge=1, le=50)
     profile: dict = Field(default_factory=dict)
     mode: Literal["search", "deep"] = "search"
     incognito: bool = False
