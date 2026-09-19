@@ -1,31 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import {
   ArrowBendDownRight,
   ArrowClockwise,
-  ArrowUp,
   ArrowUpRight,
-  BookOpenText,
-  CaretDown,
   ChatCircleText,
   Check,
   Copy,
-  Flask,
+  EyeSlash,
   GearSix,
   GlobeHemisphereWest,
   List,
   MagnifyingGlass,
   SidebarSimple,
-  PencilLine,
   Plus,
   ShareNetwork,
   SignIn,
   SignOut,
-  EyeSlash,
-  Sparkle,
-  SpinnerGap,
-  Square,
-  Timer,
   Trash,
   Tray,
   WarningCircle,
@@ -38,99 +29,16 @@ import { SourceList } from './article'
 import { faviconFor, hostnameOf, normalizeCitations, renderRich } from './markdown'
 import AuthModal from './AuthModal'
 import SettingsModal from './SettingsModal'
+import { ChatSourcesModal } from './components/ChatSourcesModal'
+import { Composer } from './components/Composer'
+import { AnswerHeader } from './components/AnswerHeader'
+import { StatusSteps } from './components/StatusSteps'
+import { groupThreads, loadThreads } from './hooks/useThreadStore'
+import { loadAskMode, loadCollapsed, loadIncognito, errorMessage, newId, INCOGNITO_KEY, AUTH_KEY, MAX_THREADS, STORAGE_KEY, SIDEBAR_KEY } from './lib/storage'
+import { loadPrefs, loadProfile } from './lib/preferences'
+import { loadSession, isSource } from './lib/normalize'
 import type { AskMode, Prefs, Profile, Source, Thread, Turn } from './types'
-import {
-  DEFAULT_PREFS,
-  DEFAULT_PROFILE,
-  MODE_KEY,
-  PREFS_KEY,
-  PROFILE_KEY,
-} from './types'
-
-function loadAskMode(): AskMode {
-  try {
-    return localStorage.getItem(MODE_KEY) === 'deep' ? 'deep' : 'search'
-  } catch {
-    return 'search'
-  }
-}
-
-const STORAGE_KEY = 'verixa.threads.v1'
-const AUTH_KEY = 'verixa.auth.v1'
-const LEGACY_STORAGE_KEY = 'seekora.threads.v1'
-const MAX_THREADS = 30
-const SIDEBAR_KEY = 'verixa.sidebar.v1'
-
-interface ThreadGroup {
-  label: string
-  items: Thread[]
-}
-
-function groupThreads(all: Thread[], filter: string): ThreadGroup[] {
-  const q = filter.trim().toLowerCase()
-  const list =
-    q === ''
-      ? all
-      : all.filter(
-          (t) =>
-            t.title.toLowerCase().includes(q) ||
-            t.turns.some((turn) => turn.query.toLowerCase().includes(q)),
-        )
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const startMs = start.getTime()
-  const day = 24 * 60 * 60 * 1000
-  const groups: ThreadGroup[] = [
-    { label: 'Today', items: [] },
-    { label: 'Yesterday', items: [] },
-    { label: 'Previous 7 days', items: [] },
-    { label: 'Older', items: [] },
-  ]
-  for (const t of list) {
-    if (t.ts >= startMs) groups[0].items.push(t)
-    else if (t.ts >= startMs - day) groups[1].items.push(t)
-    else if (t.ts >= startMs - 7 * day) groups[2].items.push(t)
-    else groups[3].items.push(t)
-  }
-  return groups.filter((g) => g.items.length > 0)
-}
-
-function loadCollapsed(): boolean {
-  try {
-    return localStorage.getItem(SIDEBAR_KEY) === 'collapsed'
-  } catch {
-    return false
-  }
-}
-
-interface SuggestionItem {
-  topic: string
-  text: string
-}
-
-const SUGGESTION_POOL: SuggestionItem[] = [
-  { topic: 'Clean Energy', text: 'What are the latest developments in small modular nuclear reactors?' },
-  { topic: 'AI & Systems', text: 'How does retrieval augmented generation reduce hallucinations?' },
-  { topic: 'Climate', text: 'What did the latest IPCC report say about methane emissions?' },
-  { topic: 'Space', text: 'What is happening with the Artemis moon program?' },
-  { topic: 'Health & Science', text: 'How much sleep do adults actually need?' },
-  { topic: 'Economy', text: 'Why do central banks raise interest rates to fight inflation?' },
-  { topic: 'Biotech', text: 'What is CRISPR and how is it used in medicine?' },
-  { topic: 'Economics', text: 'How does remittance shape the economy of Nepal?' },
-  { topic: 'History', text: 'What caused the fall of the Roman Empire?' },
-]
-
-function heroSuggestions(profile: Profile): SuggestionItem[] {
-  const day = Math.floor(Date.now() / 86400000)
-  const picked = [0, 1, 2].map(
-    (i) => SUGGESTION_POOL[(day + i) % SUGGESTION_POOL.length],
-  )
-  const place = profile.shareLocation ? profile.location.trim().slice(0, 60) : ''
-  if (place !== '') {
-    picked[2] = { topic: 'Local', text: `What is happening in ${place} this week?` }
-  }
-  return picked
-}
+import { PREFS_KEY, PROFILE_KEY, MODE_KEY } from './types'
 
 type Phase = 'idle' | 'searching' | 'reading' | 'writing' | 'thinking' | 'researching' | 'done'
 
@@ -145,635 +53,28 @@ type StreamEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
+interface SuggestionItem { topic: string; text: string }
 
-function isSource(value: unknown): value is Source {
-  if (typeof value !== 'object' || value === null) return false
-  const s = value as Record<string, unknown>
-  return (
-    typeof s.id === 'number' &&
-    typeof s.title === 'string' &&
-    typeof s.url === 'string'
-  )
-}
-
-function normalizeThread(value: unknown): Thread | null {
-  if (typeof value !== 'object' || value === null) return null
-  const t = value as Record<string, unknown>
-  if (typeof t.id !== 'string' || typeof t.title !== 'string') return null
-  if (Array.isArray(t.turns)) {
-    const turns: Turn[] = t.turns
-      .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
-      .map((x) => {
-        const sources = Array.isArray(x.sources) ? x.sources.filter(isSource) : []
-        return {
-          query: typeof x.query === 'string' ? x.query : '',
-          answer: typeof x.answer === 'string' ? x.answer : '',
-          sources,
-          mode: x.mode === 'chat' ? ('chat' as const) : x.mode === 'deep' ? ('deep' as const) : ('search' as const),
-          searchedQuery: typeof x.searchedQuery === 'string' ? x.searchedQuery : '',
-          durationMs: typeof x.durationMs === 'number' ? x.durationMs : 0,
-          related: Array.isArray(x.related)
-            ? x.related.filter((r): r is string => typeof r === 'string').slice(0, 4)
-            : [],
-        }
-      })
-      .filter((x) => x.query !== '')
-    if (turns.length === 0) return null
-    return {
-      id: t.id,
-      title: t.title,
-      turns,
-      ts: typeof t.ts === 'number' ? t.ts : Date.now(),
-    }
-  }
-  /* Legacy single-turn shape: wrap it so old history keeps working. */
-  if (typeof t.query === 'string' && typeof t.answer === 'string') {
-    return {
-      id: t.id,
-      title: t.title,
-      turns: [
-        {
-          query: t.query,
-          answer: t.answer,
-          sources: Array.isArray(t.sources) ? t.sources.filter(isSource) : [],
-          mode: 'search',
-          searchedQuery: '',
-          durationMs: 0,
-          related: [],
-        },
-      ],
-      ts: typeof t.ts === 'number' ? t.ts : Date.now(),
-    }
-  }
-  return null
-}
-
-function loadSession(): Session | null {
-  try {
-    const raw = localStorage.getItem(AUTH_KEY)
-    if (!raw) return null
-    const parsed: unknown = JSON.parse(raw)
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      typeof (parsed as Record<string, unknown>).token !== 'string' ||
-      typeof (parsed as Record<string, unknown>).email !== 'string'
-    ) {
-      return null
-    }
-    const p = parsed as Record<string, unknown>
-    return {
-      token: p.token as string,
-      id: typeof p.id === 'string' ? p.id : '',
-      email: p.email as string,
-      full_name: typeof p.full_name === 'string' ? p.full_name : '',
-      username: typeof p.username === 'string' ? p.username : '',
-    }
-  } catch {
-    return null
-  }
-}
-
-function loadPrefs(): Prefs {
-  try {
-    const raw = localStorage.getItem(PREFS_KEY)
-    if (!raw) return DEFAULT_PREFS
-    const p = JSON.parse(raw) as Partial<Prefs>
-    const numResults = p.numResults === 3 || p.numResults === 10 ? p.numResults : 5
-    return { numResults, stream: p.stream !== false }
-  } catch {
-    return DEFAULT_PREFS
-  }
-}
-
-function loadProfile(): Profile {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY)
-    if (!raw) return DEFAULT_PROFILE
-    const p = JSON.parse(raw) as Partial<Profile> & Record<string, unknown>
-    const text = (key: keyof Profile, limit: number): string =>
-      typeof p[key] === 'string' ? (p[key] as string).slice(0, limit) : ''
-    return {
-      name: text('name', 100),
-      instructions: text('instructions', 2000),
-      occupation: text('occupation', 120),
-      company: text('company', 120),
-      dob: /^\d{4}-\d{2}-\d{2}$/.test(text('dob', 10)) ? text('dob', 10) : '',
-      gender: ['female', 'male', 'nonbinary', 'prefer_not_to_say'].includes(
-        text('gender', 20).toLowerCase(),
-      )
-        ? text('gender', 20).toLowerCase()
-        : '',
-      shareLocation: p.shareLocation === true,
-      location: text('location', 120),
-      responseLength: (['short', 'long'] as const).includes(
-        text('responseLength', 10).toLowerCase() as 'short' | 'long',
-      )
-        ? (text('responseLength', 10).toLowerCase() as 'short' | 'long')
-        : 'default',
-      responseFormat: (['lists', 'paragraph'] as const).includes(
-        text('responseFormat', 10).toLowerCase() as 'lists' | 'paragraph',
-      )
-        ? (text('responseFormat', 10).toLowerCase() as 'lists' | 'paragraph')
-        : 'default',
-    }
-  } catch {
-    return DEFAULT_PROFILE
-  }
-}
-
-const INCOGNITO_KEY = 'verixa.incognito.v1'
-
-function loadIncognito(): boolean {
-  try {
-    return sessionStorage.getItem(INCOGNITO_KEY) === 'on'
-  } catch {
-    return false
-  }
-}
-
-function loadThreads(): Thread[] {
-  try {
-    const raw =
-      localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
-    if (!raw) return []
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.flatMap((x) => {
-      const t = normalizeThread(x)
-      return t ? [t] : []
-    })
-  } catch {
-    return []
-  }
-}
-
-function saveThreads(threads: Thread[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(threads.slice(0, MAX_THREADS)))
-  } catch {
-    /* private mode or quota: history stays in memory only */
-  }
-}
-
-function newId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-  return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message
-  return 'Something went wrong while asking.'
-}
-
-type StepId = 'searching' | 'reading' | 'writing'
-
-/* Grok-style deep-research animation: pulsing "Thinking" headline with a
-   live dot-wave, rotating activity line, elapsed timer, animated progress
-   bar, and an expandable trail of completed steps. */
-function DeepThink({ steps, headline }: { steps: string[]; headline: string }) {
-  const [open, setOpen] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
-  const startedAt = useRef(Date.now())
-
-  useEffect(() => {
-    startedAt.current = Date.now()
-    setElapsed(0)
-    const t = setInterval(
-      () => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)),
-      1000,
-    )
-    return () => clearInterval(t)
-  }, [])
-
-  const rows = steps.length > 0 ? steps : ['Starting deep research']
-  const current = rows[rows.length - 1]
-  const done = rows.slice(0, -1)
-  const mm = Math.floor(elapsed / 60)
-  const ss = String(elapsed % 60).padStart(2, '0')
-
-  return (
-    <div className="think-card rise" role="status" aria-label="Deep research progress">
-      <div className="think-head">
-        <span className="think-spark" aria-hidden="true">
-          <Sparkle size={18} weight="fill" />
-        </span>
-        <span className="think-title">
-          {headline}
-          <span className="think-dots" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-        </span>
-        <span className="think-timer" aria-label={`${elapsed} seconds elapsed`}>
-          <Timer size={13} aria-hidden="true" />
-          {mm}:{ss}
-        </span>
-      </div>
-      <p key={current} className="think-current fade-swap">
-        {current}
-      </p>
-      <div className="think-bar" aria-hidden="true">
-        <span className="think-bar-fill" />
-      </div>
-      {done.length > 0 && (
-        <button
-          type="button"
-          className="think-toggle"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-        >
-          <CaretDown size={14} weight="bold" className={open ? 'flip' : ''} aria-hidden="true" />
-          {done.length} step{done.length === 1 ? '' : 's'} completed
-        </button>
-      )}
-      {open && done.length > 0 && (
-        <ul className="think-trail">
-          {done.map((label, i) => (
-            <li key={`${i}-${label}`}>
-              <Check size={13} weight="bold" aria-hidden="true" />
-              <span>{label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-const STEPS: Array<{ id: StepId; label: string; icon: ReactNode }> = [
-  { id: 'searching', label: 'Searching the web', icon: <MagnifyingGlass size={16} /> },
-  { id: 'reading', label: 'Reading sources', icon: <BookOpenText size={16} /> },
-  { id: 'writing', label: 'Writing answer', icon: <PencilLine size={16} /> },
+const SUGGESTION_POOL: SuggestionItem[] = [
+  { topic: 'AI', text: 'How does retrieval augmented generation reduce hallucinations?' },
+  { topic: 'Climate', text: 'What did the latest IPCC report say about methane emissions?' },
+  { topic: 'Space', text: 'What is happening with the Artemis moon program?' },
+  { topic: 'Health', text: 'How much sleep do adults actually need?' },
+  { topic: 'Economy', text: 'Why do central banks raise interest rates to fight inflation?' },
+  { topic: 'History', text: 'What caused the fall of the Roman Empire?' },
 ]
 
-function StatusSteps({
-  phase,
-  sourceCount,
-  resolved,
-  steps,
-}: {
-  phase: Phase
-  sourceCount: number
-  resolved: string
-  steps: string[]
-}) {
-  if (phase === 'thinking') {
-    return (
-      <div className="status-card rise" role="status" aria-label="Thinking">
-        <ul className="status-list">
-          <li className="status-row active">
-            <span className="step-icon" aria-hidden="true">
-              <span className="step-live">
-                <Sparkle size={16} />
-              </span>
-            </span>
-            Thinking...
-          </li>
-        </ul>
-      </div>
-    )
+function heroSuggestions(profile: Profile): SuggestionItem[] {
+  const day = Math.floor(Date.now() / 86400000)
+  const picked = [0, 1, 2].map(
+    (i) => SUGGESTION_POOL[(day + i) % SUGGESTION_POOL.length],
+  )
+  const place = profile.shareLocation ? profile.location.trim().slice(0, 60) : ''
+  if (place !== '') {
+    picked[2] = { topic: 'Local', text: 'What is happening in ' + place + ' this week?' }
   }
-  if (phase === 'researching' || (phase === 'writing' && steps.length > 0)) {
-    return <DeepThink steps={steps} headline={phase === 'writing' ? 'Writing report' : 'Researching'} />
-  }
-  const activeIdx = STEPS.findIndex((s) => s.id === phase)
-  return (
-    <div className="status-card rise" role="status" aria-label="Search progress">
-      <ul className="status-list">
-        {STEPS.map((step, i) => {
-          const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending'
-          const label =
-            step.id === 'reading' && sourceCount > 0
-              ? `Reading ${sourceCount} sources`
-              : step.label
-          return (
-            <li key={step.id} className={`status-row ${state}`}>
-              <span className="step-icon" aria-hidden="true">
-                {state === 'done' ? (
-                  <Check size={16} weight="bold" />
-                ) : state === 'active' ? (
-                  <span className="step-live">{step.icon}</span>
-                ) : (
-                  step.icon
-                )}
-              </span>
-              {label}
-            </li>
-          )
-        })}
-      </ul>
-      {resolved !== '' && (
-        <p className="resolve-line">Searching for &ldquo;{resolved}&rdquo;</p>
-      )}
-    </div>
-  )
+  return picked
 }
-
-interface ComposerProps {
-  value: string
-  onChange: (value: string) => void
-  onSubmit: () => void
-  loading: boolean
-  placeholder: string
-  hint?: string
-  mode: AskMode
-  onMode: (mode: AskMode) => void
-  onStop?: () => void
-}
-
-const MODES: Array<{
-  id: AskMode
-  label: string
-  desc: string
-  icon: ReactNode
-}> = [
-  {
-    id: 'search',
-    label: 'Search',
-    desc: 'Fast answers with live sources',
-    icon: <GlobeHemisphereWest size={18} />,
-  },
-  {
-    id: 'deep',
-    label: 'Deep research',
-    desc: 'Multi-step research that takes longer',
-    icon: <Flask size={18} />,
-  },
-]
-
-function Composer({
-  value,
-  onChange,
-  onSubmit,
-  loading,
-  placeholder,
-  mode,
-  onMode,
-  onStop,
-}: ComposerProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 52), 220)}px`
-  }, [value])
-
-  function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>): void {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      if (!loading && value.trim()) {
-        onSubmit()
-      }
-    }
-  }
-
-  function pick(next: AskMode): void {
-    onMode(next)
-    setMenuOpen(false)
-  }
-
-  const current = MODES.find((m) => m.id === mode) ?? MODES[0]
-
-  return (
-    <div className={`composer${value.trim() ? ' has-content' : ''}`}>
-      <label className="visually-hidden" htmlFor="verixa-query">
-        Ask a question
-      </label>
-      <textarea
-        ref={textareaRef}
-        id="verixa-query"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        rows={1}
-      />
-      <div className="composer-row">
-        <div className="composer-left">
-          <div className="mode-wrap">
-            <button
-              type="button"
-              className={`mode-button${mode === 'deep' ? ' mode-deep-active' : ''}`}
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-expanded={menuOpen}
-              aria-haspopup="listbox"
-              aria-label={`Answer mode: ${current.label}`}
-              title="Answer mode"
-            >
-              <span className="mode-button-icon">{current.icon}</span>
-              <span className="mode-button-label">{current.label}</span>
-              <CaretDown
-                size={11}
-                weight="bold"
-                className={`mode-caret${menuOpen ? ' open' : ''}`}
-                aria-hidden="true"
-              />
-            </button>
-            {menuOpen && (
-              <>
-                <button
-                  type="button"
-                  className="menu-backdrop"
-                  aria-label="Close mode menu"
-                  onClick={() => setMenuOpen(false)}
-                />
-                <div
-                  className="mode-menu"
-                  role="listbox"
-                  aria-label="Answer mode"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setMenuOpen(false)
-                  }}
-                >
-                  {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      role="option"
-                      aria-selected={mode === m.id}
-                      className={`mode-option${mode === m.id ? ' active' : ''}`}
-                      onClick={() => pick(m.id)}
-                    >
-                      {m.icon}
-                      <span className="mode-text">
-                        <span className="mode-name">{m.label}</span>
-                        <span className="mode-desc">{m.desc}</span>
-                      </span>
-                      {mode === m.id && <Check size={16} weight="bold" />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="composer-right">
-          <div className="composer-shortcuts" aria-hidden="true">
-            <kbd>↵</kbd>
-            <span className="shortcut-label">Ask</span>
-            <span className="shortcut-sep">·</span>
-            <kbd>⇧↵</kbd>
-            <span className="shortcut-label">New line</span>
-          </div>
-
-          {loading && onStop ? (
-            <button
-              type="button"
-              className="ask-button stop-btn"
-              onClick={onStop}
-              aria-label="Stop generating"
-              title="Stop generating"
-            >
-              <Square size={13} weight="fill" />
-              <span>Stop</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="ask-button"
-              onClick={onSubmit}
-              disabled={loading || !value.trim()}
-              aria-label="Ask"
-              title="Ask (Enter)"
-            >
-              {loading ? (
-                <SpinnerGap size={17} weight="bold" className="spin" />
-              ) : (
-                <ArrowUp size={17} weight="bold" />
-              )}
-              <span>{loading ? 'Asking...' : 'Ask'}</span>
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ChatSourcesModal({
-  sources,
-  onClose,
-}: {
-  sources: Source[]
-  onClose: () => void
-}) {
-  const [filter, setFilter] = useState('')
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  const filtered = sources.filter(
-    (s) =>
-      s.title.toLowerCase().includes(filter.toLowerCase()) ||
-      s.url.toLowerCase().includes(filter.toLowerCase()) ||
-      (s.excerpt && s.excerpt.toLowerCase().includes(filter.toLowerCase())),
-  )
-
-  return (
-    <div
-      className="modal-backdrop"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div
-        className="modal chat-sources-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="chat-sources-title"
-      >
-        <div className="modal-head">
-          <div className="chat-sources-header-left">
-            <h2 id="chat-sources-title" className="modal-title">
-              Sources in this chat
-            </h2>
-            <span className="sources-badge">{sources.length}</span>
-          </div>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close sources dialog"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {sources.length > 3 && (
-          <div className="chat-sources-search">
-            <MagnifyingGlass size={15} aria-hidden="true" />
-            <input
-              type="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter chat sources..."
-              autoFocus
-            />
-          </div>
-        )}
-
-        <div className="chat-sources-content">
-          {filtered.length > 0 ? (
-            <SourceList prefix="chat-modal-" sources={filtered} />
-          ) : (
-            <p className="thread-empty">No sources match &ldquo;{filter}&rdquo;</p>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function formatSecs(ms: number): string {
-  return `${Math.max(1, Math.round(ms / 1000))}s`
-}
-
-function AnswerHeader({
-  mode,
-  durationMs,
-  loading = false,
-}: {
-  mode: Turn['mode']
-  durationMs: number
-  loading?: boolean
-}) {
-  return (
-    <div className="answer-header rise">
-      <div className="answer-brand">
-        <span className={`answer-mark${loading ? ' pulsing' : ''}`} aria-hidden="true">
-          <Sparkle size={14} weight="fill" />
-        </span>
-        <span className="answer-label">{loading ? 'Searching & answering...' : 'Answer'}</span>
-      </div>
-      <div className="answer-meta-tags">
-        {mode === 'deep' && (
-          <span className="deep-badge">
-            <Flask size={13} aria-hidden="true" />
-            Deep research
-          </span>
-        )}
-        {durationMs > 0 && (
-          <span className="researched-pill">
-            <Timer size={13} aria-hidden="true" />
-            Researched {formatSecs(durationMs)}
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function App() {
   const [threads, setThreads] = useState<Thread[]>(loadThreads)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -795,13 +96,13 @@ function App() {
   const searchRef = useRef<HTMLInputElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const threadBottomRef = useRef<HTMLDivElement>(null)
-  const [session, setSession] = useState<Session | null>(loadSession)
+  const [session, setSession] = useState<Session | null>(() => loadSession(localStorage.getItem(AUTH_KEY)))
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileMenu, setProfileMenu] = useState(false)
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
-  const [prefs] = useState<Prefs>(loadPrefs)
-  const [profile, setProfile] = useState<Profile>(loadProfile)
+  const [prefs] = useState<Prefs>(() => loadPrefs(localStorage.getItem(PREFS_KEY)))
+  const [profile, setProfile] = useState<Profile>(() => loadProfile(localStorage.getItem(PROFILE_KEY)))
   const [askMode, setAskMode] = useState<AskMode>(loadAskMode)
   const [steps, setSteps] = useState<string[]>([])
   const [chatSourcesOpen, setChatSourcesOpen] = useState(false)
@@ -852,7 +153,7 @@ function App() {
 
   useEffect(() => {
     if (incognito) return
-    saveThreads(threads)
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(threads.slice(0, MAX_THREADS))) } catch { /* ignore */ }
   }, [threads, incognito])
 
   function toggleIncognito(): void {
@@ -931,7 +232,7 @@ function App() {
   }, [profile])
 
   useEffect(() => {
-    const stored = loadSession()
+    const stored = loadSession(localStorage.getItem(AUTH_KEY))
     if (!stored) return
     fetchMe(stored.token).catch(() => {
       setSession(null)
