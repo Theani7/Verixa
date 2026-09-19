@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { API_URL, syncThread } from '../api'
 import type { Session } from '../api'
 import { normalizeCitations } from '../lib/citations'
-import type { AskMode, Prefs, Profile, Source, Thread, Turn } from '../types'
+import type { AskMode, LLMConfig, Prefs, Profile, Source, Thread, Turn } from '../types'
 
 import { errorMessage } from '../lib/storage'
 import { isSource } from '../lib/normalize'
@@ -27,6 +27,7 @@ export interface UseAskStreamArgs {
   profile: Profile
   prefs: Prefs
   askMode: AskMode
+  llmConfig?: LLMConfig
   historyTurns: Turn[]
   onTurn: (turn: Turn) => void
 }
@@ -37,6 +38,7 @@ export function useAskStream({
   profile,
   prefs,
   askMode,
+  llmConfig,
   historyTurns,
   onTurn,
 }: UseAskStreamArgs) {
@@ -178,7 +180,16 @@ export function useAskStream({
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     // Incognito: never send the auth token, so the request is anonymous
     // and the server cannot touch account data (memories, threads).
-    if (session && !incognito) headers.Authorization = `Bearer ${session.token}`
+    const custom_llm =
+      llmConfig && llmConfig.provider !== 'default'
+        ? {
+            provider: llmConfig.provider,
+            api_key: llmConfig.apiKey || undefined,
+            base_url: llmConfig.baseUrl || undefined,
+            model: llmConfig.model || undefined,
+          }
+        : undefined
+
     const payload = JSON.stringify({
       query: q,
       history,
@@ -186,6 +197,7 @@ export function useAskStream({
       profile,
       mode: askMode,
       incognito,
+      custom_llm,
     })
 
     const controller = new AbortController()

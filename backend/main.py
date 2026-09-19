@@ -50,6 +50,13 @@ class HistoryTurn(BaseModel):
     answer: str = ""
 
 
+class CustomLLMConfig(BaseModel):
+    provider: str = "default"
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+
+
 class AskRequest(BaseModel):
     query: str
     history: list[HistoryTurn] = []
@@ -57,6 +64,8 @@ class AskRequest(BaseModel):
     profile: dict = Field(default_factory=dict)
     mode: Literal["search", "deep"] = "search"
     incognito: bool = False
+    custom_llm: CustomLLMConfig | None = None
+
 
 
 class ThreadSave(BaseModel):
@@ -156,6 +165,10 @@ def ask(
     authorization: str | None = Header(default=None),
 ) -> dict:
     user_id = None if req.incognito else user_id_from_header(authorization)
+    custom_llm_dict = req.custom_llm.model_dump() if req.custom_llm else None
+    from backend.clients import create_custom_llm
+    llm = create_custom_llm(custom_llm_dict)
+
     if req.mode == "deep":
         from backend.deep import deep_answer
 
@@ -165,6 +178,7 @@ def ask(
             profile=_clean_profile(req.profile),
             user_id=user_id,
             incognito=req.incognito,
+            llm=llm,
         )
     return answer_query(
         req.query,
@@ -173,6 +187,7 @@ def ask(
         num_results=req.num_results,
         user_id=user_id,
         incognito=req.incognito,
+        llm=llm,
     )
 
 
@@ -181,6 +196,7 @@ def ask_stream(
     req: AskRequest,
     authorization: str | None = Header(default=None),
 ) -> StreamingResponse:
+    custom_llm_dict = req.custom_llm.model_dump() if req.custom_llm else None
     return StreamingResponse(
         event_stream(
             req.query,
@@ -190,6 +206,7 @@ def ask_stream(
             user_id=None if req.incognito else user_id_from_header(authorization),
             mode=req.mode,
             incognito=req.incognito,
+            custom_llm=custom_llm_dict,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

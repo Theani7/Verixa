@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Brain, Sparkle, UserCircle, X } from '@phosphor-icons/react'
-import type { Profile, Session } from '../types'
+import { Brain, Cpu, Sparkle, UserCircle, X } from '@phosphor-icons/react'
+import type { LLMConfig, Profile, Session } from '../types'
 import { AccountPane } from './settings/AccountPane'
 import { PersonalizationPane } from './settings/PersonalizationPane'
 import { MemoryPane } from './settings/MemoryPane'
+import { ModelPane } from './settings/ModelPane'
 
-export type Category = 'account' | 'personalization' | 'memory'
+export type Category = 'account' | 'model' | 'personalization' | 'memory'
 
 export const CATEGORIES: Array<{ id: Category; label: string; icon: ReactNode }> = [
   { id: 'account', label: 'Account', icon: <UserCircle size={18} /> },
+  { id: 'model', label: 'Model & API', icon: <Cpu size={18} /> },
   { id: 'personalization', label: 'Personalization', icon: <Sparkle size={18} /> },
   { id: 'memory', label: 'Memory', icon: <Brain size={18} /> },
 ]
@@ -18,6 +20,8 @@ export interface SettingsModalProps {
   session: Session | null
   profile: Profile
   onProfile: (profile: Profile) => void
+  llmConfig: LLMConfig
+  onLlmConfig: (config: LLMConfig) => void
   onClose: () => void
   onSignOut: () => void
   onProfileSaved: (me: { full_name: string; username: string }) => void
@@ -28,6 +32,8 @@ export function SettingsModal({
   session,
   profile,
   onProfile,
+  llmConfig,
+  onLlmConfig,
   onClose,
   onSignOut,
   onProfileSaved,
@@ -94,6 +100,9 @@ export function SettingsModal({
                 onProfileSaved={onProfileSaved}
                 onOpenAuth={onOpenAuth}
               />
+            )}
+            {category === 'model' && (
+              <ModelPane config={llmConfig} onChange={onLlmConfig} />
             )}
             {category === 'personalization' && (
               <PersonalizationPane profile={profile} onProfile={onProfile} />

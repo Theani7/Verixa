@@ -26,8 +26,13 @@ import {
 } from './lib/storage'
 import { loadPrefs, loadProfile, persistPrefs, persistProfile } from './lib/preferences'
 import { collectSources, loadSession } from './lib/normalize'
-import type { AskMode, Prefs, Profile } from './types'
-import { PREFS_KEY, PROFILE_KEY } from './types'
+import type { AskMode, LLMConfig, Prefs, Profile } from './types'
+import {
+  DEFAULT_LLM_CONFIG,
+  LLM_CONFIG_KEY,
+  PREFS_KEY,
+  PROFILE_KEY,
+} from './types'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() =>
@@ -37,6 +42,14 @@ function App() {
   const [profile, setProfile] = useState<Profile>(() =>
     loadProfile(localStorage.getItem(PROFILE_KEY)),
   )
+  const [llmConfig, setLlmConfig] = useState<LLMConfig>(() => {
+    try {
+      const raw = localStorage.getItem(LLM_CONFIG_KEY)
+      return raw ? (JSON.parse(raw) as LLMConfig) : DEFAULT_LLM_CONFIG
+    } catch {
+      return DEFAULT_LLM_CONFIG
+    }
+  })
   const [askMode, setAskMode] = useState<AskMode>(loadAskMode)
   const [incognito, setIncognito] = useState(loadIncognito)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
@@ -44,6 +57,15 @@ function App() {
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [chatSourcesOpen, setChatSourcesOpen] = useState(false)
+
+  const handleUpdateLlmConfig = (cfg: LLMConfig) => {
+    setLlmConfig(cfg)
+    try {
+      localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(cfg))
+    } catch {
+      // ignore
+    }
+  }
 
   const searchRef = useRef<HTMLInputElement>(null)
   const threadBottomRef = useRef<HTMLDivElement>(null)
@@ -66,6 +88,7 @@ function App() {
     profile,
     prefs,
     askMode,
+    llmConfig,
     historyTurns: turns,
     onTurn: persistTurn,
   })
@@ -399,6 +422,8 @@ function App() {
           session={session}
           profile={profile}
           onProfile={setProfile}
+          llmConfig={llmConfig}
+          onLlmConfig={handleUpdateLlmConfig}
           onClose={() => setSettingsOpen(false)}
           onSignOut={() => {
             signOut()

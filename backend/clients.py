@@ -66,6 +66,94 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
     return _llm
 
 
+def create_custom_llm(
+    config: dict | None = None,
+    timeout: float = 90.0,
+) -> BaseChatModel:
+    """Create or return an LLM instance tailored for a specific request.
+
+    If config is empty or provider is 'default', the server's default shared LLM is returned.
+    Otherwise, instantiates the requested provider (anthropic, openrouter, openai, ollama, groq, custom).
+    """
+    if not config:
+        return get_llm(timeout=timeout)
+
+    provider = str(config.get("provider") or "default").strip().lower()
+    if provider in ("default", ""):
+        return get_llm(model=config.get("model"), timeout=timeout)
+
+    model = config.get("model") or None
+    api_key = config.get("api_key") or None
+    base_url = config.get("base_url") or None
+
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        if not key:
+            raise RuntimeError(
+                "Anthropic API key is required. Please provide it in Settings > Model & API or set ANTHROPIC_API_KEY."
+            )
+        return ChatAnthropic(
+            model=model or "claude-3-5-sonnet-latest",
+            api_key=key,
+            timeout=timeout,
+        )
+
+    if provider == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        key = api_key or os.getenv("OPENROUTER_API_KEY", "")
+        if not key:
+            raise RuntimeError(
+                "OpenRouter API key is required. Please provide it in Settings > Model & API or set OPENROUTER_API_KEY."
+            )
+        return ChatOpenAI(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            model=model or "anthropic/claude-3.5-sonnet",
+            api_key=key,
+            timeout=timeout,
+        )
+
+    if provider in ("openai", "custom"):
+        from langchain_openai import ChatOpenAI
+
+        key = api_key or settings.openai_api_key or "not-needed"
+        kwargs = {
+            "model": model or settings.get_model(),
+            "api_key": key,
+            "timeout": timeout,
+        }
+        target_url = base_url or settings.openai_base_url
+        if target_url:
+            kwargs["base_url"] = target_url
+        return ChatOpenAI(**kwargs)
+
+    if provider == "ollama":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            base_url=base_url or settings.ollama_base_url,
+            model=model or settings.get_model(),
+            api_key="ollama",
+            timeout=timeout,
+        )
+
+    if provider == "groq":
+        key = api_key or settings.groq_api_key
+        if not key:
+            raise RuntimeError(
+                "GROQ API key is required. Please provide it in Settings > Model & API or set GROQ_API_KEY."
+            )
+        return ChatGroq(
+            model=model or settings.get_model(),
+            api_key=key,
+            timeout=timeout,
+        )
+
+    return get_llm(model=model, timeout=timeout)
+
+
 def get_exa_client() -> Exa:
     """Shared Exa search client."""
     global _exa
@@ -78,4 +166,5 @@ def get_exa_client() -> Exa:
             )
         _exa = Exa(api_key=api_key)
     return _exa
+
 

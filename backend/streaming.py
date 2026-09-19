@@ -31,7 +31,7 @@ from backend.chain import (
     rewrite_query,
     route_message,
 )
-from backend.clients import get_llm
+from backend.clients import create_custom_llm, get_llm
 from backend.deep import deep_research_report, verify_report
 from verixa.search import web_search
 
@@ -69,12 +69,18 @@ async def event_stream(
     user_id=None,
     mode: str = "search",
     incognito: bool = False,
+    custom_llm: dict | None = None,
 ) -> AsyncIterator[str]:
 
     history = history or []
     count = num_results or DEFAULT_RESULTS
     try:
-        llm = get_llm()
+        llm = create_custom_llm(custom_llm)
+    except Exception as exc:
+        yield _frame({"type": "error", "message": f"LLM setup failed: {exc}"})
+        return
+
+    try:
         if mode != "deep":
             mode = await run_in_threadpool(route_message, query, history, llm)
     except Exception:
@@ -96,6 +102,7 @@ async def event_stream(
                 user_id,
                 incognito=incognito,
                 on_progress=None,
+                llm=llm,
             )
 
             sources = research.get("sources", [])
@@ -104,7 +111,7 @@ async def event_stream(
             yield _status("writing")
             yield _frame({"type": "progress", "label": "Extracting claims"})
 
-            llm_now = get_llm()
+            llm_now = llm
             report = None
             try:
                 report = await run_in_threadpool(
@@ -131,7 +138,7 @@ async def event_stream(
                         "label": f"Rewriting {len(bad)} unsupported claims",
                     }
                 )
-                chain = build_deep_answer_chain(extra, draft_feedback=feedback)
+                chain = build_deep_answer_chain(extra, draft_feedback=feedback, llm=llm)
                 full_text = ""
                 async for text in _stream_text(
                     chain,
@@ -167,10 +174,10 @@ async def event_stream(
             return
         yield _frame({"type": "done"})
         await run_in_threadpool(
-            maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
+            maybe_learn_memories, user_id, query, full_text, llm, auto_learn
         )
         related = await run_in_threadpool(
-            related_questions, query, full_text, get_llm()
+            related_questions, query, full_text, llm
         )
         if related:
             yield _frame({"type": "related", "questions": related})
@@ -187,7 +194,7 @@ async def event_stream(
                 memories, auto_learn = await run_in_threadpool(
                     load_memory_context, user_id
                 )
-            chain = build_chat_chain(build_system_extra(profile, memories))
+            chain = build_chat_chain(build_system_extra(profile, memories), llm=llm)
             full_text = ""
             async for text in _stream_text(
                 chain,
@@ -200,10 +207,10 @@ async def event_stream(
             return
         yield _frame({"type": "done"})
         await run_in_threadpool(
-            maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
+            maybe_learn_memories, user_id, query, full_text, llm, auto_learn
         )
         related = await run_in_threadpool(
-            related_questions, query, full_text, get_llm()
+            related_questions, query, full_text, llm
         )
         if related:
             yield _frame({"type": "related", "questions": related})
@@ -229,7 +236,7 @@ async def event_stream(
             memories, auto_learn = [], False
         else:
             memories, auto_learn = await run_in_threadpool(load_memory_context, user_id)
-        chain = build_answer_chain(build_system_extra(profile, memories))
+        chain = build_answer_chain(build_system_extra(profile, memories), llm=llm)
         full_text = ""
         async for text in _stream_text(
             chain,
@@ -247,10 +254,10 @@ async def event_stream(
 
     yield _frame({"type": "done"})
     await run_in_threadpool(
-        maybe_learn_memories, user_id, query, full_text, get_llm(), auto_learn
+        maybe_learn_memories, user_id, query, full_text, llm, auto_learn
     )
     related = await run_in_threadpool(
-        related_questions, query, full_text, get_llm()
+        related_questions, query, full_text, llm
     )
     if related:
         yield _frame({"type": "related", "questions": related})

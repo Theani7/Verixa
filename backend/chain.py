@@ -208,7 +208,7 @@ def route_message(query: str, history: list[dict], llm) -> str:
         return "search"
 
 
-def build_chat_chain(system_extra: str = ""):
+def build_chat_chain(system_extra: str = "", llm: BaseChatModel | None = None):
     """Direct conversational answers: no search, no citations."""
     system = CHAT_SYSTEM_PROMPT
     if system_extra.strip():
@@ -222,7 +222,7 @@ def build_chat_chain(system_extra: str = ""):
             ),
         ]
     )
-    return prompt | get_llm()
+    return prompt | (llm or get_llm())
 
 
 def build_context(
@@ -238,7 +238,7 @@ def build_context(
     return "\n\n".join(blocks), sources
 
 
-def build_answer_chain(system_extra: str = ""):
+def build_answer_chain(system_extra: str = "", llm: BaseChatModel | None = None):
     """LangChain chain: prompt plus Groq chat model for cited answers."""
     system = SYSTEM_PROMPT
     if system_extra.strip():
@@ -256,10 +256,12 @@ def build_answer_chain(system_extra: str = ""):
             ),
         ]
     )
-    return prompt | get_llm()
+    return prompt | (llm or get_llm())
 
 
-def build_deep_answer_chain(system_extra: str = "", draft_feedback: str = ""):
+def build_deep_answer_chain(
+    system_extra: str = "", draft_feedback: str = "", llm: BaseChatModel | None = None
+):
 
     """LangChain chain for deep-research reports: structured, verified synthesis."""
     system = DEEP_SYNTHESIS_PROMPT
@@ -282,7 +284,7 @@ def build_deep_answer_chain(system_extra: str = "", draft_feedback: str = ""):
             ),
         ]
     )
-    return prompt | get_llm()
+    return prompt | (llm or get_llm())
 
 
 def load_memory_context(user_id, limit: int = 20) -> tuple[list[str], bool]:
@@ -496,38 +498,39 @@ def answer_query(
     num_results: int | None = None,
     user_id=None,
     incognito: bool = False,
+    llm: BaseChatModel | None = None,
 ) -> dict:
-    """Search Exa, then synthesize a cited answer with LangChain + Groq."""
+    """Search Exa, then synthesize a cited answer with LangChain."""
     history = history or []
     count = num_results or DEFAULT_RESULTS
-    llm = get_llm()
+    active_llm = llm or get_llm()
     cache_key = answer_cache.make_key(query, "search", profile or {}, num_results, history)
-    if not incognito:
+    if not incognito and llm is None:
         cached = answer_cache.get(cache_key)
         if cached is not None:
             return cached
     memories, auto_learn = resolve_memory_context(user_id, incognito)
     extra = build_system_extra(profile, memories)
 
-    if route_message(query, history, llm) == "chat":
-        response = build_chat_chain(extra).invoke(
+    if route_message(query, history, active_llm) == "chat":
+        response = build_chat_chain(extra, llm=active_llm).invoke(
             {"history": format_history(history), "query": query}
         )
         content = response.content if isinstance(response.content, str) else ""
-        maybe_learn_memories(user_id, query, content, llm, auto_learn)
+        maybe_learn_memories(user_id, query, content, active_llm, auto_learn)
         return {
             "answer": content,
             "sources": [],
             "query": query,
             "mode": "chat",
-            "related": related_questions(query, content, llm),
+            "related": related_questions(query, content, active_llm),
         }
 
-    standalone = rewrite_query(query, history, llm)
+    standalone = rewrite_query(query, history, active_llm)
     result = web_search(standalone, num_results=count)
     context, sources = build_context(result, max_results=count)
 
-    chain = build_answer_chain(extra)
+    chain = build_answer_chain(extra, llm=active_llm)
     response = chain.invoke(
         {
             "history": format_history(history),
@@ -536,14 +539,14 @@ def answer_query(
         }
     )
     content = response.content if isinstance(response.content, str) else ""
-    maybe_learn_memories(user_id, query, content, llm, auto_learn)
+    maybe_learn_memories(user_id, query, content, active_llm, auto_learn)
     result = {
         "answer": normalize_citations(content),
         "sources": sources,
         "query": standalone,
         "mode": "search",
-        "related": related_questions(query, content, llm),
+        "related": related_questions(query, content, active_llm),
     }
-    if not incognito:
+    if not incognito and llm is None:
         answer_cache.put(cache_key, result)
     return result

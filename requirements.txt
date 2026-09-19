@@ -11,3 +11,5 @@ bcrypt>=4.1
 pyjwt>=2.8
 diskcache>=5.6.0
 langchain-openai>=1.6.0
+langchain-anthropic>=1.7.0
+

@@ -84,3 +84,29 @@ export interface Memory {
   created_at: string
 }
 
+export type LLMProviderType =
+  | 'default'
+  | 'openai'
+  | 'anthropic'
+  | 'openrouter'
+  | 'groq'
+  | 'ollama'
+  | 'custom'
+
+export interface LLMConfig {
+  provider: LLMProviderType
+  apiKey?: string
+  baseUrl?: string
+  model?: string
+}
+
+export const DEFAULT_LLM_CONFIG: LLMConfig = {
+  provider: 'default',
+  apiKey: '',
+  baseUrl: '',
+  model: '',
+}
+
+export const LLM_CONFIG_KEY = 'verixa.llm_config.v1'
+
+

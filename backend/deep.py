@@ -503,6 +503,7 @@ def deep_research_report(
     user_id=None,
     incognito: bool = False,
     on_progress=None,
+    llm=None,
 ) -> dict:
     """Full deep-research pipeline: research, verify, report.
 
@@ -511,9 +512,9 @@ def deep_research_report(
     execute identical code.
     """
     history = history or []
-    llm = get_llm()
+    active_llm = llm or get_llm()
     cache_key = answer_cache.make_key(query, "deep", profile or {}, None, history)
-    if not incognito:
+    if not incognito and llm is None:
         cached = answer_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -521,13 +522,13 @@ def deep_research_report(
     memories, auto_learn = resolve_memory_context(user_id, incognito)
     extra = build_system_extra(profile, memories)
 
-    research = run_research(query, history_text, llm, on_progress)
+    research = run_research(query, history_text, active_llm, on_progress)
     context = research["context"]
     sources = research["sources"]
     collected = research["collected"]
 
     content, verify_metrics = synthesize_report(
-        query, history_text, context, extra, llm, sources, on_progress, incognito
+        query, history_text, context, extra, active_llm, sources, on_progress, incognito
     )
 
     logging.getLogger("verixa.verify").info(
@@ -540,15 +541,15 @@ def deep_research_report(
         " ".join(f"{k}={v}" for k, v in sorted(verify_metrics.items())),
     )
 
-    maybe_learn_memories(user_id, query, content, llm, auto_learn)
+    maybe_learn_memories(user_id, query, content, active_llm, auto_learn)
     result = {
         "answer": content,
         "sources": sources,
         "query": query,
         "mode": "deep",
-        "related": related_questions(query, content, llm),
+        "related": related_questions(query, content, active_llm),
     }
-    if not incognito:
+    if not incognito and llm is None:
         answer_cache.put(cache_key, result)
     return result
 
@@ -560,6 +561,7 @@ def deep_answer(
     user_id=None,
     on_progress=None,
     incognito: bool = False,
+    llm=None,
 ) -> dict:
     """Blocking deep-research answer (non-streaming clients)."""
     return deep_research_report(
@@ -569,4 +571,5 @@ def deep_answer(
         user_id,
         incognito=incognito,
         on_progress=on_progress,
+        llm=llm,
     )
