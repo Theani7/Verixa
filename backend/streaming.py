@@ -15,6 +15,52 @@ from collections.abc import AsyncIterator
 
 from starlette.concurrency import run_in_threadpool
 
+from backend.chain import (
+    DEFAULT_RESULTS,
+    build_answer_chain,
+    build_chat_chain,
+    build_deep_answer_chain,
+    build_system_extra,
+    build_context,
+    format_history,
+    load_memory_context,
+    maybe_learn_memories,
+    normalize_citations,
+    related_questions,
+    resolve_memory_context,
+    rewrite_query,
+    route_message,
+)
+from backend.clients import get_llm
+from backend.deep import deep_research_report, verify_report
+from verixa.search import web_search
+
+
+
+def _frame(obj: dict) -> str:
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+def _status(phase: str) -> str:
+    return _frame({"type": "status", "phase": phase})
+
+
+async def _stream_text(chain, payload: dict) -> AsyncIterator[str]:
+    """Yield raw text chunks from a LangChain chain."""
+    async for chunk in chain.astream(payload):
+        content = chunk.content
+        if isinstance(content, str):
+            text = content
+        else:
+            text = "".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict)
+            )
+        if text:
+            yield text
+
+
 async def event_stream(
     query: str,
     history: list[dict] | None = None,
@@ -24,6 +70,7 @@ async def event_stream(
     mode: str = "search",
     incognito: bool = False,
 ) -> AsyncIterator[str]:
+
     history = history or []
     count = num_results or DEFAULT_RESULTS
     try:

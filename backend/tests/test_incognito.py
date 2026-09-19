@@ -42,9 +42,11 @@ def t3_no_memory_use():
     """Incognito must not load memories (privacy) even when signed in."""
     called = {"load": 0}
 
-    def fake_load(user_id):
-        called["load"] += 1
-        return ["secret memory"], True
+    def fake_load(user_id, incognito=False):
+        if not incognito:
+            called["load"] += 1
+            return ["secret memory"], True
+        return [], False
 
     saved = {
         "resolve": deep.resolve_memory_context,
@@ -71,7 +73,8 @@ def t3_no_memory_use():
         check("T3 normal loads memory", called["load"] == 1,
               f"loads={called['load']}")
     finally:
-        deep.load_memory_context = saved["load"]
+        deep.resolve_memory_context = saved["resolve"]
+
         deep.decompose = saved["decompose"]
         deep.collect_round = saved["collect"]
         deep.reflect_gaps = saved["reflect"]
@@ -84,13 +87,9 @@ def t4_stream_skips_learning():
     """Streaming deep path must not learn memories in incognito."""
     import asyncio
 
-    calls = {"learn": 0}
     orig_load = streaming.load_memory_context
     orig_learn = streaming.maybe_learn_memories
-    orig_decompose = streaming.decompose
-    orig_collect = streaming.collect_round
-    orig_reflect = streaming.reflect_gaps
-    orig_synth = streaming.synthesize_report
+    orig_deep = streaming.deep_research_report
     orig_llm = streaming.get_llm
     orig_related = streaming.related_questions
     orig_route = streaming.route_message
@@ -111,13 +110,14 @@ def t4_stream_skips_learning():
         seen_auto.append(bool(auto))
 
     streaming.maybe_learn_memories = fake_learn
-    streaming.decompose = lambda *a, **k: ["q1"]
-    streaming.collect_round = lambda *a, **k: ("ctx", [], [], "")
-    streaming.reflect_gaps = lambda *a, **k: []
-    streaming.synthesize_report = lambda *a, **k: ("answer", {})
+    streaming.deep_research_report = lambda *a, **k: {
+        "answer": "answer",
+        "sources": [],
+        "context": "",
+    }
     streaming.get_llm = lambda: FakeLLM()
     streaming.related_questions = lambda *a, **k: []
-    streaming.route_message = lambda *a, **k: "search"
+    streaming.route_message = lambda *a, **k: "deep"
     try:
         async def run():
             frames = []
@@ -142,13 +142,11 @@ def t4_stream_skips_learning():
     finally:
         streaming.load_memory_context = orig_load
         streaming.maybe_learn_memories = orig_learn
-        streaming.decompose = orig_decompose
-        streaming.collect_round = orig_collect
-        streaming.reflect_gaps = orig_reflect
-        streaming.synthesize_report = orig_synth
+        streaming.deep_research_report = orig_deep
         streaming.get_llm = orig_llm
         streaming.related_questions = orig_related
         streaming.route_message = orig_route
+
 
 
 def t5_redaction():

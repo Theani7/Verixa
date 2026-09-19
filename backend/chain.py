@@ -16,9 +16,12 @@ from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 
+from backend import answer_cache
+from backend.clients import get_llm
 from verixa.search import web_search
 
 load_dotenv()
+
 
 DEFAULT_RESULTS = 5
 
@@ -164,18 +167,8 @@ HISTORY_ANSWER_CHARS = 1200
 
 
 def normalize_citations(text: str) -> str:
-    """Rewrite model-native 【n†...】 markers as [n] chips the UI renders."""
+    """Normalize native LLM bracket notations into standard [N] format."""
     return NATIVE_CITATION_RE.sub(r"[\1]", text)
-
-
-def get_llm() -> ChatGroq:
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "GROQ_API_KEY is not set. Copy .env.example to .env "
-            "and add your key from https://console.groq.com."
-        )
-    return ChatGroq(model="openai/gpt-oss-120b", api_key=api_key)
 
 
 def format_history(history: list[dict]) -> str:
@@ -559,6 +552,11 @@ def answer_query(
     history = history or []
     count = num_results or DEFAULT_RESULTS
     llm = get_llm()
+    cache_key = answer_cache.make_key(query, "search", profile or {}, num_results, history)
+    if not incognito:
+        cached = answer_cache.get(cache_key)
+        if cached is not None:
+            return cached
     memories, auto_learn = resolve_memory_context(user_id, incognito)
     extra = build_system_extra(profile, memories)
 
@@ -590,10 +588,13 @@ def answer_query(
     )
     content = response.content if isinstance(response.content, str) else ""
     maybe_learn_memories(user_id, query, content, llm, auto_learn)
-    return {
+    result = {
         "answer": normalize_citations(content),
         "sources": sources,
         "query": standalone,
         "mode": "search",
         "related": related_questions(query, content, llm),
     }
+    if not incognito:
+        answer_cache.put(cache_key, result)
+    return result
