@@ -25,7 +25,7 @@ export interface ComposerProps {
   onMode: (mode: AskMode) => void
   onStop?: () => void
   llmConfig?: LLMConfig
-  onSelectModel?: (sourceId: string) => void
+  onSelectModel?: (providerId: string, modelName: string) => void
   onOpenModelSettings?: () => void
 }
 
@@ -87,9 +87,9 @@ export function Composer({
     setModeMenuOpen(false)
   }
 
-  function handleModelPick(sourceId: string): void {
+  function handleModelPick(providerId: string, modelName: string): void {
     if (onSelectModel) {
-      onSelectModel(sourceId)
+      onSelectModel(providerId, modelName)
     }
     setModelMenuOpen(false)
   }
@@ -97,13 +97,12 @@ export function Composer({
   const currentMode = MODES.find((m) => m.id === mode) ?? MODES[0]
 
   // Active label
-  const activeLabel =
-    llmConfig?.activeModelLabel ||
-    (llmConfig?.provider && llmConfig.provider !== 'default'
-      ? `${llmConfig.provider} (${llmConfig.model})`
-      : 'Server Default')
+  const activeLabel = llmConfig?.activeModelLabel || 'Server Default'
 
-  const configuredSources = llmConfig?.sources || []
+  // Providers with models added
+  const providersWithModels = (llmConfig?.providers || []).filter(
+    (p) => p.models && p.models.length > 0
+  )
 
   return (
     <div className={`composer${value.trim() ? ' has-content' : ''}`}>
@@ -186,7 +185,7 @@ export function Composer({
           <div className="model-select-wrap">
             <button
               type="button"
-              className={`model-select-btn${llmConfig && llmConfig.activeSourceId !== 'default' ? ' custom-active' : ''}`}
+              className={`model-select-btn${llmConfig && llmConfig.activeProviderId !== 'default' ? ' custom-active' : ''}`}
               onClick={() => {
                 setModelMenuOpen((v) => !v)
                 setModeMenuOpen(false)
@@ -231,44 +230,53 @@ export function Composer({
                     {/* Server Default */}
                     <button
                       type="button"
-                      className={`model-item${(!llmConfig || llmConfig.activeSourceId === 'default') ? ' active' : ''}`}
-                      onClick={() => handleModelPick('default')}
+                      className={`model-item${(!llmConfig || llmConfig.activeProviderId === 'default') ? ' active' : ''}`}
+                      onClick={() => handleModelPick('default', '')}
                     >
                       <div className="model-item-info">
                         <span className="model-item-name">
                           <Sparkle size={13} weight="fill" className="model-icon-sparkle" /> Server Default
                         </span>
-                        <span className="model-item-id">Model from server environment</span>
+                        <span className="model-item-id">Configured on server (.env)</span>
                       </div>
-                      {(!llmConfig || llmConfig.activeSourceId === 'default') && (
+                      {(!llmConfig || llmConfig.activeProviderId === 'default') && (
                         <Check size={14} weight="bold" />
                       )}
                     </button>
 
-                    {/* Explicitly Added Models */}
-                    {configuredSources.map((source) => {
-                      const isSelected = llmConfig?.activeSourceId === source.id
-                      return (
-                        <button
-                          key={source.id}
-                          type="button"
-                          className={`model-item${isSelected ? ' active' : ''}`}
-                          onClick={() => handleModelPick(source.id)}
-                        >
-                          <div className="model-item-info">
-                            <span className="model-item-name">{source.name}</span>
-                            <span className="model-item-id">
-                              {source.provider} &bull; {source.model}
-                            </span>
-                          </div>
-                          {isSelected && <Check size={14} weight="bold" />}
-                        </button>
-                      )
-                    })}
+                    {/* Grouped by Provider with their multiple models */}
+                    {providersWithModels.map((prov) => (
+                      <div key={prov.id} className="model-group">
+                        <div className="model-group-title-row">
+                          <span className="model-group-title">{prov.name}</span>
+                          <span className="model-group-count">{prov.models.length} model{prov.models.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        {prov.models.map((m) => {
+                          const isSelected =
+                            llmConfig?.activeProviderId === prov.id &&
+                            llmConfig?.activeModel === m
 
-                    {configuredSources.length === 0 && (
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              className={`model-item${isSelected ? ' active' : ''}`}
+                              onClick={() => handleModelPick(prov.id, m)}
+                            >
+                              <div className="model-item-info">
+                                <span className="model-item-name">{m}</span>
+                                <span className="model-item-id">{prov.name}</span>
+                              </div>
+                              {isSelected && <Check size={14} weight="bold" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ))}
+
+                    {providersWithModels.length === 0 && (
                       <p className="empty-models-hint">
-                        No custom models added yet. Click below to add your models.
+                        No custom models added yet. Click below to add models from OpenAI, Claude, OpenRouter, Groq, or Ollama.
                       </p>
                     )}
                   </div>

@@ -35,7 +35,7 @@ import {
   PROFILE_KEY,
   normalizeLLMConfig,
 } from './types'
-import { activateLLMSource } from './lib/llmProviders'
+import { selectActiveModel } from './lib/llmProviders'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() =>
@@ -71,8 +71,8 @@ function App() {
     }
   }
 
-  const handleSelectModel = (sourceId: string) => {
-    const updated = activateLLMSource(llmConfig, sourceId)
+  const handleSelectModel = (providerId: string, modelName: string) => {
+    const updated = selectActiveModel(llmConfig, providerId, modelName)
     handleUpdateLlmConfig(updated)
   }
 

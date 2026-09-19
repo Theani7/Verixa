@@ -93,33 +93,79 @@ export type LLMProviderType =
   | 'ollama'
   | 'custom'
 
-export interface ModelSource {
+export interface ProviderConfig {
   id: string
   name: string
   provider: LLMProviderType
-  model: string
   apiKey?: string
   baseUrl?: string
+  models: string[]
+  isCustom?: boolean
 }
 
+export const INITIAL_PROVIDERS: ProviderConfig[] = [
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    models: [],
+  },
+  {
+    id: 'anthropic',
+    name: 'Claude (Anthropic)',
+    provider: 'anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    apiKey: '',
+    models: [],
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    provider: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKey: '',
+    models: [],
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    provider: 'groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    apiKey: '',
+    models: [],
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama (Local)',
+    provider: 'ollama',
+    baseUrl: 'http://localhost:11434/v1',
+    apiKey: '',
+    models: [],
+  },
+]
+
 export interface LLMConfig {
+  activeProviderId: string
+  activeModel?: string
+  activeModelLabel?: string
   provider: LLMProviderType
   apiKey?: string
   baseUrl?: string
   model?: string
-  activeSourceId?: string
-  activeModelLabel?: string
-  sources: ModelSource[]
+  providers: ProviderConfig[]
 }
 
 export const DEFAULT_LLM_CONFIG: LLMConfig = {
+  activeProviderId: 'default',
+  activeModel: '',
+  activeModelLabel: 'Server Default',
   provider: 'default',
   apiKey: '',
   baseUrl: '',
   model: '',
-  activeSourceId: 'default',
-  activeModelLabel: 'Server Default',
-  sources: [],
+  providers: INITIAL_PROVIDERS,
 }
 
 export const LLM_CONFIG_KEY = 'verixa.llm_config.v1'
@@ -128,41 +174,83 @@ export function normalizeLLMConfig(saved: unknown): LLMConfig {
   if (!saved || typeof saved !== 'object') {
     return DEFAULT_LLM_CONFIG
   }
-  const s = saved as Partial<LLMConfig> & { customSources?: ModelSource[]; providers?: Record<string, { apiKey?: string; baseUrl?: string; model?: string }> }
+  const s = saved as Partial<LLMConfig> & {
+    sources?: Array<{ id: string; name: string; provider: LLMProviderType; model: string; apiKey?: string; baseUrl?: string }>
+  }
 
-  let sources: ModelSource[] = []
-  if (Array.isArray(s.sources)) {
-    sources = s.sources
-  } else if (Array.isArray(s.customSources)) {
-    sources = s.customSources
-  } else if (s.providers && typeof s.providers === 'object') {
-    for (const [prov, creds] of Object.entries(s.providers)) {
-      if (creds && creds.apiKey && creds.model) {
-        sources.push({
-          id: `source_${prov}`,
-          name: prov.toUpperCase(),
-          provider: prov as LLMProviderType,
-          model: creds.model,
-          apiKey: creds.apiKey,
-          baseUrl: creds.baseUrl,
+  let providers: ProviderConfig[] = INITIAL_PROVIDERS.map((p) => ({ ...p, models: [...p.models] }))
+
+  if (Array.isArray(s.providers) && s.providers.length > 0) {
+    const savedMap = new Map<string, ProviderConfig>()
+    for (const p of s.providers) {
+      if (p && p.id) savedMap.set(p.id, p)
+    }
+    // Merge standard providers with saved credentials and models
+    providers = INITIAL_PROVIDERS.map((init) => {
+      const existing = savedMap.get(init.id)
+      if (existing) {
+        savedMap.delete(init.id)
+        return {
+          ...init,
+          ...existing,
+          models: Array.isArray(existing.models) ? existing.models : [],
+        }
+      }
+      return { ...init }
+    })
+    // Add any remaining custom providers
+    for (const [, custom] of savedMap) {
+      if (custom && custom.id) {
+        providers.push({
+          ...custom,
+          models: Array.isArray(custom.models) ? custom.models : [],
+          isCustom: true,
+        })
+      }
+    }
+  } else if (Array.isArray(s.sources) && s.sources.length > 0) {
+    // Migration from previous source format
+    for (const src of s.sources) {
+      const match = providers.find((p) => p.id === src.provider)
+      if (match) {
+        if (src.apiKey && !match.apiKey) match.apiKey = src.apiKey
+        if (src.baseUrl && !match.baseUrl) match.baseUrl = src.baseUrl
+        if (src.model && !match.models.includes(src.model)) {
+          match.models.push(src.model)
+        }
+      } else {
+        // Custom provider
+        providers.push({
+          id: src.id,
+          name: src.name || 'Custom',
+          provider: src.provider,
+          apiKey: src.apiKey,
+          baseUrl: src.baseUrl,
+          models: src.model ? [src.model] : [],
+          isCustom: true,
         })
       }
     }
   }
 
-  const activeSourceId = s.activeSourceId || s.provider || 'default'
-  const activeSource = sources.find((src) => src.id === activeSourceId)
+  const activeProviderId = s.activeProviderId || (s.provider && s.provider !== 'default' ? s.provider : 'default')
+  const activeModel = s.activeModel || s.model || ''
+  const activeProv = providers.find((p) => p.id === activeProviderId)
+
+  let activeModelLabel = 'Server Default'
+  if (activeProviderId !== 'default' && activeProv && activeModel) {
+    activeModelLabel = `${activeProv.name} (${activeModel})`
+  }
 
   return {
-    ...DEFAULT_LLM_CONFIG,
-    ...s,
-    sources,
-    activeSourceId: activeSource ? activeSource.id : (s.provider === 'default' ? 'default' : s.activeSourceId || 'default'),
-    provider: activeSource ? activeSource.provider : (s.provider || 'default'),
-    apiKey: activeSource ? (activeSource.apiKey || '') : (s.apiKey || ''),
-    baseUrl: activeSource ? (activeSource.baseUrl || '') : (s.baseUrl || ''),
-    model: activeSource ? activeSource.model : (s.model || ''),
-    activeModelLabel: activeSource ? `${activeSource.name} (${activeSource.model})` : 'Server Default',
+    activeProviderId: activeProv ? activeProv.id : 'default',
+    activeModel: activeProv ? activeModel : '',
+    activeModelLabel,
+    provider: activeProv ? activeProv.provider : 'default',
+    apiKey: activeProv ? (activeProv.apiKey || '') : '',
+    baseUrl: activeProv ? (activeProv.baseUrl || '') : '',
+    model: activeProv ? activeModel : '',
+    providers,
   }
 }
 
