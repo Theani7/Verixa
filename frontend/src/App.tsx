@@ -5,6 +5,7 @@ import { fetchMe, syncThread } from './api'
 import type { Session } from './api'
 import { AuthModal } from './components/AuthModal'
 import { SettingsModal } from './components/SettingsModal'
+import type { Category } from './components/SettingsModal'
 import { ChatSourcesModal } from './components/ChatSourcesModal'
 
 import { Composer } from './components/Composer'
@@ -32,20 +33,22 @@ import {
   LLM_CONFIG_KEY,
   PREFS_KEY,
   PROFILE_KEY,
+  normalizeLLMConfig,
 } from './types'
+import { activateLLMSource } from './lib/llmProviders'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() =>
     loadSession(localStorage.getItem(AUTH_KEY)),
   )
-  const [prefs] = useState<Prefs>(() => loadPrefs(localStorage.getItem(PREFS_KEY)))
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs(localStorage.getItem(PREFS_KEY)))
   const [profile, setProfile] = useState<Profile>(() =>
     loadProfile(localStorage.getItem(PROFILE_KEY)),
   )
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(() => {
     try {
       const raw = localStorage.getItem(LLM_CONFIG_KEY)
-      return raw ? (JSON.parse(raw) as LLMConfig) : DEFAULT_LLM_CONFIG
+      return raw ? normalizeLLMConfig(JSON.parse(raw)) : DEFAULT_LLM_CONFIG
     } catch {
       return DEFAULT_LLM_CONFIG
     }
@@ -56,6 +59,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsCategory, setSettingsCategory] = useState<Category>('account')
   const [chatSourcesOpen, setChatSourcesOpen] = useState(false)
 
   const handleUpdateLlmConfig = (cfg: LLMConfig) => {
@@ -65,6 +69,16 @@ function App() {
     } catch {
       // ignore
     }
+  }
+
+  const handleSelectModel = (sourceId: string) => {
+    const updated = activateLLMSource(llmConfig, sourceId)
+    handleUpdateLlmConfig(updated)
+  }
+
+  const handleOpenModelSettings = () => {
+    setSettingsCategory('model')
+    setSettingsOpen(true)
   }
 
   const searchRef = useRef<HTMLInputElement>(null)
@@ -314,6 +328,9 @@ function App() {
                 askStream.setQuery(text)
                 handleAsk(text)
               }}
+              llmConfig={llmConfig}
+              onSelectModel={handleSelectModel}
+              onOpenModelSettings={handleOpenModelSettings}
             />
           ) : (
             <main
@@ -396,6 +413,9 @@ function App() {
                     placeholder={
                       turns.length > 0 ? 'Ask a follow-up...' : 'Ask anything...'
                     }
+                    llmConfig={llmConfig}
+                    onSelectModel={handleSelectModel}
+                    onOpenModelSettings={handleOpenModelSettings}
                   />
                 </form>
               </div>
@@ -424,6 +444,9 @@ function App() {
           onProfile={setProfile}
           llmConfig={llmConfig}
           onLlmConfig={handleUpdateLlmConfig}
+          prefs={prefs}
+          onPrefs={setPrefs}
+          initialCategory={settingsCategory}
           onClose={() => setSettingsOpen(false)}
           onSignOut={() => {
             signOut()
