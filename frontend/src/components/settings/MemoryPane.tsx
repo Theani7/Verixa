@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
 import { Trash } from '@phosphor-icons/react'
-import { addMemory, deleteMemory, fetchMe, listMemories, updateProfile } from '../../api'
-import type { Memory, Session } from '../../types'
+import type { Session } from '../../types'
+import { useMemories } from '../../hooks/useMemories'
 import { SignInPrompt } from './SignInPrompt'
 
 export interface MemoryPaneProps {
@@ -11,78 +9,21 @@ export interface MemoryPaneProps {
 }
 
 export function MemoryPane({ session, onOpenAuth }: MemoryPaneProps) {
-  const [memories, setMemories] = useState<Memory[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [memEnabled, setMemEnabled] = useState(true)
-  const [memAuto, setMemAuto] = useState(true)
+  const {
+    memories,
+    loaded,
+    draft,
+    setDraft,
+    error,
+    busy,
+    memEnabled,
+    memAuto,
+    setFlag,
+    add,
+    remove,
+  } = useMemories(session)
 
-  useEffect(() => {
-    if (!session) return
-    Promise.all([listMemories(session.token), fetchMe(session.token)])
-      .then(([rows, me]) => {
-        setMemories(rows)
-        setMemEnabled(me.memory_enabled)
-        setMemAuto(me.memory_auto)
-        setLoaded(true)
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Could not load memories.')
-        setLoaded(true)
-      })
-  }, [session])
-
-  const token = session?.token ?? ''
   if (!session) return <SignInPrompt onOpenAuth={onOpenAuth} />
-
-  async function setFlag(
-    key: 'memory_enabled' | 'memory_auto',
-    value: boolean,
-  ): Promise<void> {
-    const prevEnabled = memEnabled
-    const prevAuto = memAuto
-    if (key === 'memory_enabled') setMemEnabled(value)
-    else setMemAuto(value)
-    setError('')
-    try {
-      const me = await updateProfile(token, { [key]: value })
-      setMemEnabled(me.memory_enabled)
-      setMemAuto(me.memory_auto)
-    } catch (err) {
-      setMemEnabled(prevEnabled)
-      setMemAuto(prevAuto)
-      setError(err instanceof Error ? err.message : 'Could not save setting.')
-    }
-  }
-
-  async function add(e: FormEvent): Promise<void> {
-    e.preventDefault()
-    const content = draft.trim()
-    if (content === '' || busy) return
-    setBusy(true)
-    setError('')
-    try {
-      const row = await addMemory(token, content)
-      setMemories((prev) => [row, ...prev])
-      setDraft('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save memory.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function remove(id: string): Promise<void> {
-    setError('')
-    try {
-      await deleteMemory(token, id)
-      setMemories((prev) => prev.filter((m) => m.id !== id))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete memory.')
-    }
-  }
 
   return (
     <div>
