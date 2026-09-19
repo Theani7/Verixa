@@ -7,22 +7,24 @@ from langchain_groq import ChatGroq
 
 load_dotenv()
 
+from backend.config import settings
+
 _llm: ChatGroq | None = None
 _exa: Exa | None = None
 
 
-def get_llm(model: str = "openai/gpt-oss-120b", timeout: float = 90.0) -> ChatGroq:
+def get_llm(model: str | None = None, timeout: float = 90.0) -> ChatGroq:
     """Shared ChatGroq client. Created once per process; safe to call often."""
     global _llm
     if _llm is None:
-        api_key = os.getenv("GROQ_API_KEY")
+        api_key = settings.groq_api_key
         if not api_key:
             raise RuntimeError(
                 "GROQ_API_KEY is not set. Copy .env.example to .env "
                 "and add your key from https://console.groq.com."
             )
         _llm = ChatGroq(
-            model=model,
+            model=model or settings.groq_model,
             api_key=api_key,
             timeout=timeout,
         )
@@ -33,7 +35,7 @@ def get_exa_client() -> Exa:
     """Shared Exa search client."""
     global _exa
     if _exa is None:
-        api_key = os.getenv("EXA_API_KEY")
+        api_key = settings.exa_api_key
         if not api_key:
             raise RuntimeError(
                 "EXA_API_KEY is not set. Copy .env.example to .env "
@@ -41,3 +43,4 @@ def get_exa_client() -> Exa:
             )
         _exa = Exa(api_key=api_key)
     return _exa
+

@@ -9,13 +9,14 @@ import bcrypt
 import jwt
 from dotenv import load_dotenv
 
-load_dotenv()
+from backend.config import settings
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
-ALGORITHM = "HS256"
-TOKEN_DAYS = 7
+SECRET_KEY = settings.secret_key
+ALGORITHM = settings.algorithm
+TOKEN_DAYS = settings.token_days
 MIN_PASSWORD = 8
 MAX_PASSWORD = 72
+
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
