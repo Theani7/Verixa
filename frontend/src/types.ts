@@ -59,3 +59,28 @@ export const DEFAULT_PROFILE: Profile = {
 }
 export const PREFS_KEY = 'verixa.prefs.v1'
 export const PROFILE_KEY = 'verixa.profile.v1'
+
+export interface Session {
+  token: string
+  id: string
+  email: string
+  full_name: string
+  username: string
+}
+
+export interface Me {
+  id: string
+  email: string
+  full_name: string
+  username: string
+  created_at: string
+  memory_enabled: boolean
+  memory_auto: boolean
+}
+
+export interface Memory {
+  id: string
+  content: string
+  created_at: string
+}
+

@@ -1,31 +1,10 @@
-import type { Thread } from './types'
+import type { Memory, Me, Session, Thread } from './types'
+
+export type { Memory, Me, Session }
 
 export const API_URL: string =
   import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
-export interface Session {
-  token: string
-  id: string
-  email: string
-  full_name: string
-  username: string
-}
-
-export interface Me {
-  id: string
-  email: string
-  full_name: string
-  username: string
-  created_at: string
-  memory_enabled: boolean
-  memory_auto: boolean
-}
-
-export interface Memory {
-  id: string
-  content: string
-  created_at: string
-}
 
 async function request(path: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(`${API_URL}${path}`, init)
