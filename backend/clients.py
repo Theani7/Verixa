@@ -20,13 +20,15 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
     if _llm is not None:
         return _llm
 
+    resolved_model = settings.get_model(model)
     provider = settings.effective_llm_provider
+
     if provider == "ollama":
         from langchain_openai import ChatOpenAI
 
         _llm = ChatOpenAI(
             base_url=settings.ollama_base_url,
-            model=model or settings.ollama_model,
+            model=resolved_model,
             api_key="ollama",
             timeout=timeout,
         )
@@ -40,8 +42,8 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
                 "Set OPENAI_API_KEY in .env, or provide OPENAI_BASE_URL for a local compatible endpoint."
             )
         kwargs = {
-            "model": model or settings.openai_model,
-            "api_key": api_key or "not-needed",
+            "model": resolved_model,
+            "api_key": api_key,
             "timeout": timeout,
         }
         if settings.openai_base_url:
@@ -56,7 +58,7 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
                 "and add your key from https://console.groq.com."
             )
         _llm = ChatGroq(
-            model=model or settings.groq_model,
+            model=resolved_model,
             api_key=api_key,
             timeout=timeout,
         )
