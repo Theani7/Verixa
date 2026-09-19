@@ -45,6 +45,7 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
             "model": resolved_model,
             "api_key": api_key,
             "timeout": timeout,
+            "streaming": True,
         }
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
@@ -103,6 +104,7 @@ def create_custom_llm(
             model=target_model,
             api_key=key,
             timeout=timeout,
+            streaming=True,
         )
 
     if provider == "openrouter":
@@ -123,6 +125,7 @@ def create_custom_llm(
             model=target_model,
             api_key=key,
             timeout=timeout,
+            streaming=True,
             default_headers={
                 "HTTP-Referer": "http://localhost:5173",
                 "X-Title": "Verixa",
@@ -137,6 +140,7 @@ def create_custom_llm(
             "model": model or settings.get_model(),
             "api_key": key,
             "timeout": timeout,
+            "streaming": True,
         }
         target_url = base_url or settings.openai_base_url
         if target_url:
@@ -151,6 +155,7 @@ def create_custom_llm(
             model=model or settings.get_model(),
             api_key="ollama",
             timeout=timeout,
+            streaming=True,
         )
 
     if provider == "groq":

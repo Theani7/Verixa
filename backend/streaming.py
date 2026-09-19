@@ -30,6 +30,7 @@ from backend.chain import (
     resolve_memory_context,
     rewrite_query,
     route_message,
+    SMALLTALK_RE,
 )
 from backend.clients import create_custom_llm, get_llm
 from backend.deep import deep_research_report, verify_report
@@ -80,11 +81,16 @@ async def event_stream(
         yield _frame({"type": "error", "message": f"LLM setup failed: {exc}"})
         return
 
-    try:
-        if mode != "deep":
-            mode = await run_in_threadpool(route_message, query, history, llm)
-    except Exception:
-        mode = "search"
+    if mode != "deep":
+        if mode == "chat" or SMALLTALK_RE.match(query.strip()):
+            mode = "chat"
+        elif mode == "search":
+            mode = "search"
+        else:
+            try:
+                mode = await run_in_threadpool(route_message, query, history, llm)
+            except Exception:
+                mode = "search"
 
     if mode == "deep":
         yield _status("researching")
@@ -105,6 +111,7 @@ async def event_stream(
                 llm=llm,
             )
 
+            context = research.get("context", "")
             sources = research.get("sources", [])
             if sources:
                 yield _frame({"type": "sources", "sources": sources})
@@ -117,7 +124,7 @@ async def event_stream(
                 report = await run_in_threadpool(
                     verify_report,
                     query,
-                    research.get("context", ""),
+                    context,
                     research.get("answer", ""),
                     llm_now,
                     sources,
@@ -181,7 +188,6 @@ async def event_stream(
         )
         if related:
             yield _frame({"type": "related", "questions": related})
-    elif mode == "chat":
         return
 
     if mode == "chat":
@@ -218,9 +224,12 @@ async def event_stream(
 
     yield _status("searching")
     try:
-        standalone = await run_in_threadpool(rewrite_query, query, history, llm)
-        if standalone.strip().lower() != query.strip().lower():
-            yield _frame({"type": "rewrite", "query": standalone})
+        if history:
+            standalone = await run_in_threadpool(rewrite_query, query, history, llm)
+            if standalone.strip().lower() != query.strip().lower():
+                yield _frame({"type": "rewrite", "query": standalone})
+        else:
+            standalone = query
         result = await run_in_threadpool(web_search, standalone, count)
     except Exception as exc:
         yield _frame({"type": "error", "message": f"Web search failed: {exc}"})
