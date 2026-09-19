@@ -213,6 +213,19 @@ def ask_stream(
     )
 
 
+@app.post("/api/llm/test")
+def test_llm_connection(req: CustomLLMConfig) -> dict:
+    try:
+        from backend.clients import create_custom_llm
+
+        llm = create_custom_llm(req.model_dump())
+        resp = llm.invoke("Hi")
+        answer = str(resp.content).strip() if resp and resp.content else "OK"
+        return {"ok": True, "message": f"Connected successfully! Response: {answer[:40]}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.put("/api/threads/{thread_id}")
 def put_thread(
     thread_id: str,

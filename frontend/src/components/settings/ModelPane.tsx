@@ -12,6 +12,7 @@ import {
   Sparkle,
   Lightning,
   Robot,
+  SpinnerGap,
 } from '@phosphor-icons/react'
 import type { LLMConfig, LLMProviderType } from '../../types'
 import { DEFAULT_LLM_CONFIG } from '../../types'
@@ -57,9 +58,43 @@ export function ModelPane({
   const [customProvModels, setCustomProvModels] = useState('')
   const [customProvError, setCustomProvError] = useState('')
 
+  // Connection testing state
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+
   const flashSaved = () => {
     setSavedBadge(true)
     setTimeout(() => setSavedBadge(false), 1500)
+  }
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('http://localhost:8000/api/llm/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: currentProvider.provider,
+          api_key: currentProvider.apiKey || undefined,
+          base_url: currentProvider.baseUrl || undefined,
+          model: currentProvider.models[0] || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setTestResult({ ok: true, message: data.message || 'Connected successfully!' })
+      } else {
+        setTestResult({ ok: false, message: data.error || 'Connection failed.' })
+      }
+    } catch (err: unknown) {
+      setTestResult({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Network error connecting to backend.',
+      })
+    } finally {
+      setTestingConnection(false)
+    }
   }
 
   const currentProvider =
@@ -307,6 +342,28 @@ export function ModelPane({
               onChange={(e) => handleBaseUrlChange(e.target.value)}
               spellCheck="false"
             />
+          </div>
+
+          <div className="test-connection-row">
+            <button
+              type="button"
+              className="btn-test-connection"
+              onClick={handleTestConnection}
+              disabled={testingConnection || (meta.needsKey && !currentProvider.apiKey)}
+            >
+              {testingConnection ? (
+                <SpinnerGap size={14} className="spin" />
+              ) : (
+                <Lightning size={14} />
+              )}
+              <span>{testingConnection ? 'Testing Connection...' : 'Test Connection'}</span>
+            </button>
+            {testResult && (
+              <span className={`test-result-badge ${testResult.ok ? 'success' : 'error'}`}>
+                {testResult.ok ? <Check size={13} weight="bold" /> : <X size={13} weight="bold" />}
+                {testResult.message}
+              </span>
+            )}
           </div>
         </div>
 
