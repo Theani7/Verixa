@@ -3,6 +3,7 @@ import type { Turn } from '../types'
 import { renderRich } from '../markdown'
 import { SourceList } from '../article'
 import { AnswerHeader } from './AnswerHeader'
+import { ThinkingAccordion } from './ThinkingAccordion'
 import { ActionBar } from './ActionBar'
 
 export interface TurnCardProps {
@@ -47,6 +48,15 @@ export function TurnCard({
 
       <div className="assistant-turn">
         <AnswerHeader mode={turn.mode} durationMs={turn.durationMs} />
+
+        {turn.thought && (
+          <ThinkingAccordion
+            thought={turn.thought}
+            isLive={false}
+            durationMs={turn.thoughtDurationMs}
+            defaultOpen={false}
+          />
+        )}
 
         {showSearchingLine && (
           <p className="searching-line">

@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react'
-import { BookOpenText, Check, MagnifyingGlass, PencilLine, Sparkle } from '@phosphor-icons/react'
+import {
+  ArrowUpRight,
+  BookOpenText,
+  Check,
+  GlobeHemisphereWest,
+  MagnifyingGlass,
+  PencilLine,
+  Sparkle,
+} from '@phosphor-icons/react'
 import { DeepThink } from './DeepThink'
 import type { Phase } from '../hooks/useAskStream'
+import type { Source } from '../types'
+import { faviconFor, hostnameOf } from '../lib/url'
 
 export type StepId = 'searching' | 'reading' | 'writing'
 
@@ -16,9 +26,16 @@ export interface StatusStepsProps {
   sourceCount: number
   resolved: string
   steps: string[]
+  sources?: Source[]
 }
 
-export function StatusSteps({ phase, sourceCount, resolved, steps }: StatusStepsProps) {
+export function StatusSteps({
+  phase,
+  sourceCount,
+  resolved,
+  steps,
+  sources = [],
+}: StatusStepsProps) {
   if (phase === 'thinking') {
     return (
       <div className="status-card rise" role="status" aria-label="Thinking">
@@ -38,7 +55,9 @@ export function StatusSteps({ phase, sourceCount, resolved, steps }: StatusSteps
   if (phase === 'researching' || (phase === 'writing' && steps.length > 0)) {
     return <DeepThink steps={steps} headline={phase === 'writing' ? 'Writing report' : 'Researching'} />
   }
+
   const activeIdx = STEPS.findIndex((s) => s.id === phase)
+
   return (
     <div className="status-card rise" role="status" aria-label="Search progress">
       <ul className="status-list">
@@ -59,12 +78,56 @@ export function StatusSteps({ phase, sourceCount, resolved, steps }: StatusSteps
                   step.icon
                 )}
               </span>
-              {label}
+              <span className="step-label">{label}</span>
+              {state === 'active' && step.id === 'searching' && resolved && (
+                <span className="step-subquery">&ldquo;{resolved}&rdquo;</span>
+              )}
             </li>
           )
         })}
       </ul>
-      {resolved !== '' && (
+
+      {/* Live website visiting shelf with real favicons */}
+      {sources.length > 0 && (
+        <div className="visiting-shelf rise">
+          <div className="visiting-shelf-head">
+            <GlobeHemisphereWest size={13} aria-hidden="true" />
+            <span>Visited {sources.length} websites</span>
+          </div>
+          <div className="visiting-chips">
+            {sources.map((s, idx) => {
+              const host = hostnameOf(s.url)
+              const fav = faviconFor(s.url)
+              return (
+                <a
+                  key={s.id ?? s.url}
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="visiting-chip pop-in"
+                  style={{ animationDelay: `${idx * 60}ms` }}
+                  title={s.title}
+                >
+                  <img
+                    src={fav}
+                    alt=""
+                    className="visiting-favicon"
+                    loading="lazy"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none'
+                    }}
+                  />
+                  <span className="visiting-host">{host}</span>
+                  <ArrowUpRight size={11} className="visiting-chip-arrow" aria-hidden="true" />
+                  {phase === 'reading' && <span className="visiting-shimmer" />}
+                </a>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {resolved !== '' && sources.length === 0 && (
         <p className="resolve-line">Searching for &ldquo;{resolved}&rdquo;</p>
       )}
     </div>

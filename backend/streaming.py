@@ -46,20 +46,74 @@ def _status(phase: str) -> str:
     return _frame({"type": "status", "phase": phase})
 
 
-async def _stream_text(chain, payload: dict) -> AsyncIterator[str]:
-    """Yield raw text chunks from a LangChain chain."""
+async def _stream_tokens(chain, payload: dict) -> AsyncIterator[tuple[str, str]]:
+    """Yield (kind, text) where kind is 'think' or 'token'."""
+    in_think = False
+    buffer = ""
+
     async for chunk in chain.astream(payload):
+        # 1. Provider-level reasoning (OpenRouter / OpenAI / DeepSeek API)
+        reasoning = (
+            getattr(chunk, "additional_kwargs", {}).get("reasoning_content")
+            or getattr(chunk, "additional_kwargs", {}).get("reasoning")
+        )
+        if reasoning:
+            yield ("think", str(reasoning))
+
         content = chunk.content
-        if isinstance(content, str):
-            text = content
-        else:
-            text = "".join(
+        if not isinstance(content, str):
+            content = "".join(
                 block.get("text", "")
                 for block in content
                 if isinstance(block, dict)
             )
-        if text:
-            yield text
+        if not content:
+            continue
+
+        buffer += content
+        while buffer:
+            if not in_think:
+                if "<think>" in buffer:
+                    before, _, after = buffer.partition("<think>")
+                    if before:
+                        yield ("token", before)
+                    in_think = True
+                    buffer = after
+                else:
+                    # Check if buffer ends with a prefix of '<think>' to avoid splitting tag across chunks
+                    prefix_match = False
+                    for i in range(1, 7):
+                        if "<think>"[:i] == buffer[-i:]:
+                            yield ("token", buffer[:-i])
+                            buffer = buffer[-i:]
+                            prefix_match = True
+                            break
+                    if not prefix_match:
+                        yield ("token", buffer)
+                        buffer = ""
+            else:
+                if "</think>" in buffer:
+                    thought, _, after = buffer.partition("</think>")
+                    if thought:
+                        yield ("think", thought)
+                    in_think = False
+                    buffer = after
+                else:
+                    # Check if buffer ends with a prefix of '</think>' to avoid splitting tag across chunks
+                    prefix_match = False
+                    for i in range(1, 8):
+                        if "</think>"[:i] == buffer[-i:]:
+                            yield ("think", buffer[:-i])
+                            buffer = buffer[-i:]
+                            prefix_match = True
+                            break
+                    if not prefix_match:
+                        yield ("think", buffer)
+                        buffer = ""
+
+    if buffer:
+        kind = "think" if in_think else "token"
+        yield (kind, buffer)
 
 
 async def event_stream(
@@ -147,11 +201,14 @@ async def event_stream(
                 )
                 chain = build_deep_answer_chain(extra, draft_feedback=feedback, llm=llm)
                 full_text = ""
-                async for text in _stream_text(
+                async for kind, text in _stream_tokens(
                     chain,
                     {"history": history_text, "query": query, "context": context},
                 ):
-                    full_text += text
+                    if kind == "think":
+                        yield _frame({"type": "think_token", "text": text})
+                    else:
+                        full_text += text
                 yield _frame({"type": "progress", "label": "Final verification"})
                 try:
                     final_report = await run_in_threadpool(
@@ -202,12 +259,15 @@ async def event_stream(
                 )
             chain = build_chat_chain(build_system_extra(profile, memories), llm=llm)
             full_text = ""
-            async for text in _stream_text(
+            async for kind, text in _stream_tokens(
                 chain,
                 {"history": format_history(history), "query": query},
             ):
-                full_text += text
-                yield _frame({"type": "token", "text": text})
+                if kind == "think":
+                    yield _frame({"type": "think_token", "text": text})
+                else:
+                    full_text += text
+                    yield _frame({"type": "token", "text": text})
         except Exception as exc:
             yield _frame({"type": "error", "message": f"Answer failed: {exc}"})
             return
@@ -247,7 +307,7 @@ async def event_stream(
             memories, auto_learn = await run_in_threadpool(load_memory_context, user_id)
         chain = build_answer_chain(build_system_extra(profile, memories), llm=llm)
         full_text = ""
-        async for text in _stream_text(
+        async for kind, text in _stream_tokens(
             chain,
             {
                 "history": format_history(history),
@@ -255,8 +315,11 @@ async def event_stream(
                 "context": context,
             },
         ):
-            full_text += text
-            yield _frame({"type": "token", "text": text})
+            if kind == "think":
+                yield _frame({"type": "think_token", "text": text})
+            else:
+                full_text += text
+                yield _frame({"type": "token", "text": text})
     except Exception as exc:
         yield _frame({"type": "error", "message": f"Answer generation failed: {exc}"})
         return

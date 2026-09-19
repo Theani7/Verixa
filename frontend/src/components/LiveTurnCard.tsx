@@ -12,11 +12,14 @@ import { renderRich } from '../markdown'
 import { SourceList } from '../article'
 import { AnswerHeader } from './AnswerHeader'
 import { StatusSteps } from './StatusSteps'
+import { ThinkingAccordion } from './ThinkingAccordion'
 import { ActionBar } from './ActionBar'
 
 export interface LiveTurnCardProps {
   asked: string
   displayAnswer: string
+  thought?: string
+  thoughtDurationMs?: number
   sources: Source[]
   phase: Phase
   steps: string[]
@@ -40,6 +43,8 @@ export interface LiveTurnCardProps {
 export function LiveTurnCard({
   asked,
   displayAnswer,
+  thought = '',
+  thoughtDurationMs = 0,
   sources,
   phase,
   steps,
@@ -75,6 +80,15 @@ export function LiveTurnCard({
             sourceCount={sources.length}
             resolved={resolvedQuery}
             steps={steps}
+            sources={sources}
+          />
+        )}
+
+        {thought !== '' && (
+          <ThinkingAccordion
+            thought={thought}
+            isLive={loading && displayAnswer === ''}
+            durationMs={thoughtDurationMs}
           />
         )}
 

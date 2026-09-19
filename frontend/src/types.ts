@@ -13,6 +13,8 @@ export interface Turn {
   searchedQuery: string
   durationMs: number
   related: string[]
+  thought?: string
+  thoughtDurationMs?: number
 }
 
 export type AskMode = 'search' | 'deep'

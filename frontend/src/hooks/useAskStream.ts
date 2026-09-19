@@ -17,6 +17,7 @@ export type StreamEvent =
   | { type: 'rewrite'; query: string }
   | { type: 'related'; questions: string[] }
   | { type: 'sources'; sources: Source[] }
+  | { type: 'think_token'; text: string }
   | { type: 'token'; text: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
@@ -45,6 +46,8 @@ export function useAskStream({
   const [query, setQuery] = useState('')
   const [asked, setAsked] = useState('')
   const [answer, setAnswer] = useState('')
+  const [thought, setThought] = useState('')
+  const [thoughtDurationMs, setThoughtDurationMs] = useState(0)
   const [sources, setSources] = useState<Source[]>([])
   const [error, setError] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
@@ -98,6 +101,8 @@ export function useAskStream({
     searchedQuery: string,
     durationMs: number,
     relatedQs: string[],
+    turnThought?: string,
+    turnThoughtDurationMs?: number,
   ): void {
     const turn: Turn = {
       query: q,
@@ -107,6 +112,8 @@ export function useAskStream({
       searchedQuery,
       durationMs,
       related: relatedQs,
+      thought: turnThought || undefined,
+      thoughtDurationMs: turnThoughtDurationMs || undefined,
     }
     onTurnRef.current(turn)
     setAsked('')
@@ -114,6 +121,8 @@ export function useAskStream({
     setSources([])
     setRelated([])
     setSteps([])
+    setThought('')
+    setThoughtDurationMs(0)
     setPhase('done')
   }
 
@@ -123,13 +132,15 @@ export function useAskStream({
       abortControllerRef.current = null
     }
     if (asked !== '' && answer !== '') {
-      finishTurn(asked, answer, sources, askMode, resolvedQuery, 0, related)
+      finishTurn(asked, answer, sources, askMode, resolvedQuery, 0, related, thought, thoughtDurationMs)
     } else {
       setAsked('')
       setAnswer('')
       setSources([])
       setRelated([])
       setSteps([])
+      setThought('')
+      setThoughtDurationMs(0)
       setPhase('idle')
     }
   }
@@ -159,6 +170,8 @@ export function useAskStream({
     setPhase('searching')
     setError('')
     setAnswer('')
+    setThought('')
+    setThoughtDurationMs(0)
     setSources([])
     setAsked(q)
     setQuery('')
@@ -172,6 +185,9 @@ export function useAskStream({
       answer: t.answer.slice(0, 2000),
     }))
     let full = ''
+    let accumulatedThought = ''
+    let thoughtStart: number | null = null
+    let thoughtDur = 0
     let seenSources: Source[] = []
     let seenRelated: string[] = []
     let mode: Turn['mode'] = askMode
@@ -273,7 +289,17 @@ export function useAskStream({
             } else if (e.type === 'sources') {
               seenSources = e.sources ?? []
               setSources(seenSources)
+            } else if (e.type === 'think_token') {
+              if (thoughtStart === null) {
+                thoughtStart = Date.now()
+              }
+              accumulatedThought += e.text
+              setThought(accumulatedThought)
             } else if (e.type === 'token') {
+              if (thoughtStart !== null && thoughtDur === 0) {
+                thoughtDur = Date.now() - thoughtStart
+                setThoughtDurationMs(thoughtDur)
+              }
               full += e.text
               setAnswer(full)
             } else if (e.type === 'related') {
@@ -282,6 +308,10 @@ export function useAskStream({
                 .slice(0, 4)
               setRelated(seenRelated)
             } else if (e.type === 'done') {
+              if (thoughtStart !== null && thoughtDur === 0) {
+                thoughtDur = Date.now() - thoughtStart
+                setThoughtDurationMs(thoughtDur)
+              }
               finishTurn(
                 q,
                 full,
@@ -290,6 +320,8 @@ export function useAskStream({
                 standalone,
                 Date.now() - started,
                 seenRelated,
+                accumulatedThought,
+                thoughtDur,
               )
             } else if (e.type === 'error') {
               throw new Error(e.message)
@@ -364,6 +396,8 @@ export function useAskStream({
     displayAnswer,
     phase,
     answer,
+    thought,
+    thoughtDurationMs,
     sources,
     related,
     error,

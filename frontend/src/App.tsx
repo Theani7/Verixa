@@ -377,6 +377,8 @@ function App() {
                 <LiveTurnCard
                   asked={askStream.asked}
                   displayAnswer={askStream.displayAnswer}
+                  thought={askStream.thought}
+                  thoughtDurationMs={askStream.thoughtDurationMs}
                   sources={askStream.sources}
                   phase={askStream.phase}
                   steps={askStream.steps}
