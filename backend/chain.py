@@ -13,8 +13,8 @@ import os
 import re
 
 from dotenv import load_dotenv
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_groq import ChatGroq
 
 from backend import answer_cache
 from backend.clients import get_llm
@@ -100,9 +100,21 @@ def _shrink_blocks(context: str) -> str:
 
 
 def is_rate_limit_error(exc: Exception) -> bool:
-    """True when an LLM call failed with a Groq 413 / TPM error."""
-    text = str(exc)
-    return "413" in text or "rate_limit_exceeded" in text or "TPM" in text
+    """True when an LLM call failed with a rate limit (429/413) or context overflow error."""
+    text = str(exc).lower()
+    return any(
+        err in text
+        for err in (
+            "413",
+            "429",
+            "rate_limit",
+            "rate_limit_exceeded",
+            "tpm",
+            "context_length_exceeded",
+            "maximum context length",
+            "tokens per minute",
+        )
+    )
 
 
 # Deep research budgets: many small parallel searches stay inside token limits
@@ -133,10 +145,13 @@ def normalize_citations(text: str) -> str:
     return NATIVE_CITATION_RE.sub(r"[\1]", text)
 
 
-def format_history(history: list[dict]) -> str:
-    """Compact recent turns for prompts. Trimmed to respect token limits."""
+def build_history_context(history: list[dict]) -> str:
+    """Pack up to MAX_HISTORY_TURNS into a plain text block."""
+    if not history:
+        return ""
+    recent = history[-MAX_HISTORY_TURNS:]
     blocks: list[str] = []
-    for turn in history[-MAX_HISTORY_TURNS:]:
+    for turn in recent:
         q = str(turn.get("query") or "")[:300]
         a = str(turn.get("answer") or "")[:HISTORY_ANSWER_CHARS]
         if q:
@@ -144,7 +159,12 @@ def format_history(history: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def rewrite_query(query: str, history: list[dict], llm: ChatGroq) -> str:
+def format_history(history: list[dict]) -> str:
+    """Compact recent turns for prompts. Trimmed to respect token limits."""
+    return build_history_context(history)
+
+
+def rewrite_query(query: str, history: list[dict], llm: BaseChatModel) -> str:
     """Resolve a follow-up against thread history into a standalone query."""
     if not history:
         return query

@@ -35,6 +35,21 @@ class Settings:
     # Search configuration
     exa_api_key: str = os.getenv("EXA_API_KEY", "")
 
+    @property
+    def effective_llm_provider(self) -> str:
+        provider = self.llm_provider.strip().lower()
+        if provider and provider not in ("auto", "default", "groq"):
+            return provider
+        # If user configured OpenAI / custom endpoint and no Groq key, auto-switch to openai
+        if self.openai_base_url or (self.openai_api_key and not self.groq_api_key):
+            return "openai"
+        if self.groq_api_key:
+            return "groq"
+        if self.openai_api_key:
+            return "openai"
+        return "groq"
+
 
 settings = Settings()
+
 

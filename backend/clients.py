@@ -20,7 +20,7 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
     if _llm is not None:
         return _llm
 
-    provider = settings.llm_provider
+    provider = settings.effective_llm_provider
     if provider == "ollama":
         from langchain_openai import ChatOpenAI
 
@@ -33,11 +33,11 @@ def get_llm(model: str | None = None, timeout: float = 90.0) -> BaseChatModel:
     elif provider in ("openai", "custom"):
         from langchain_openai import ChatOpenAI
 
-        api_key = settings.openai_api_key
-        if not api_key and not settings.openai_base_url:
+        api_key = settings.openai_api_key or "not-needed"
+        if not settings.openai_api_key and not settings.openai_base_url:
             raise RuntimeError(
-                "OPENAI_API_KEY is not set. Please provide your API key in .env "
-                "or configure OPENAI_BASE_URL for a local compatible endpoint."
+                "OPENAI_API_KEY or OPENAI_BASE_URL is required when using the OpenAI provider. "
+                "Set OPENAI_API_KEY in .env, or provide OPENAI_BASE_URL for a local compatible endpoint."
             )
         kwargs = {
             "model": model or settings.openai_model,
