@@ -8,7 +8,6 @@ import {
   Plus,
   Trash,
   X,
-  GlobeHemisphereWest,
   Sparkle,
   Lightning,
   Robot,
@@ -30,15 +29,11 @@ import {
 export interface ModelPaneProps {
   config: LLMConfig
   onChange: (config: LLMConfig) => void
-  numResults?: number
-  onNumResultsChange?: (numResults: number) => void
 }
 
 export function ModelPane({
   config,
   onChange,
-  numResults = 5,
-  onNumResultsChange,
 }: ModelPaneProps) {
   const [selectedProviderId, setSelectedProviderId] = useState<string>(
     config.activeProviderId !== 'default' ? config.activeProviderId : 'openai'
@@ -539,36 +534,6 @@ export function ModelPane({
                 Create Endpoint
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Search Sources Count Scalability */}
-      {onNumResultsChange && (
-        <div className="search-sources-section">
-          <div className="section-head-row">
-            <div>
-              <h4 className="settings-sub-title">Search Sources Count</h4>
-              <p className="settings-hint">
-                How many live web sources Verixa retrieves and synthesizes for each question.
-              </p>
-            </div>
-          </div>
-          <div className="source-count-chips">
-            {[5, 10, 15, 20, 30, 50].map((count) => (
-              <button
-                key={count}
-                type="button"
-                className={`source-chip${numResults === count ? ' active' : ''}`}
-                onClick={() => {
-                  onNumResultsChange(count)
-                  flashSaved()
-                }}
-              >
-                <GlobeHemisphereWest size={13} />
-                <span>{count} sources</span>
-              </button>
-            ))}
           </div>
         </div>
       )}

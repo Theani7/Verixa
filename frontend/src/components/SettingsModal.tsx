@@ -37,8 +37,6 @@ export function SettingsModal({
   onProfile,
   llmConfig,
   onLlmConfig,
-  prefs,
-  onPrefs,
   initialCategory = 'account',
   onClose,
   onSignOut,
@@ -111,8 +109,6 @@ export function SettingsModal({
               <ModelPane
                 config={llmConfig}
                 onChange={onLlmConfig}
-                numResults={prefs?.numResults}
-                onNumResultsChange={(n) => onPrefs?.({ ...prefs!, numResults: n })}
               />
             )}
             {category === 'personalization' && (
