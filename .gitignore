@@ -10,3 +10,6 @@ build/
 *.db
 *.sqlite3
 AGENTS.md
+.DS_Store
+**/.DS_Store
+
